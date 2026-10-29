@@ -44,4 +44,21 @@ brew_install() {
   fi
   [ -n "$BREW_MISSING" ] && run "${BREW:-brew}" bundle --file="$REPO/install/Brewfile"
   ok "Homebrew packages ready"
+  macos_fixes
+}
+
+# Two things macOS needs for this setup, both for your user only:
+macos_fixes() {
+  local prefix tmp
+  prefix=$("${BREW:-brew}" --prefix 2>/dev/null)
+  # 1. macOS's own ncurses does not know "tmux-256color" (the terminal tmux declares), so
+  #    less, vim… inside tmux would complain: add it to ~/.terminfo from Homebrew's ncurses
+  if ! /usr/bin/infocmp tmux-256color >/dev/null 2>&1 && [ -x "$prefix/opt/ncurses/bin/infocmp" ]; then
+    tmp=$(mktemp)
+    run sh -c "'$prefix/opt/ncurses/bin/infocmp' -x tmux-256color > '$tmp' && /usr/bin/tic -x -o '$HOME/.terminfo' '$tmp'"
+    rm -f "$tmp"
+    ok "tmux-256color terminal description in ~/.terminfo"
+  fi
+  # 2. zsh asks before loading completions from group-writable folders (Homebrew's share/)
+  [ -n "$prefix" ] && run chmod -R go-w "$prefix/share" 2>/dev/null || true
 }

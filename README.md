@@ -116,6 +116,8 @@ En WSL, «abrir en el navegador» y `open` usan el navegador y el Explorador **d
 
 ### macOS
 
+> **Estado**: el instalador y el monitor están adaptados a macOS (procesos con `ps`, puertos con `lsof`, memoria con `vm_stat`, red con `netstat`…) y comprobados con salidas reales de macOS, bash 3.2 y Python 3.9, pero **aún no se han probado en un Mac de verdad**. Si algo falla, `bash install/doctor.sh` es el primer paso.
+
 1. **Herramientas de línea de comandos de Apple** (traen git):
    ```bash
    xcode-select --install

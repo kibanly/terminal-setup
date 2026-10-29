@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 #  Processes pane of the `system` session (~/.tmux/system.sh)
-#  Reads /proc every 2 s. CPU% is per core, like top (100% = one full core).
+#  Reads /proc every 2 s (macOS: ps). CPU% is per core, like top (100% = one full core).
 #
 #  Right-click a process: stop (SIGTERM) · force kill (SIGKILL), both ask first
 #  · show its ports (jumps to the Ports pane) · copy PID / command line.
@@ -33,12 +33,44 @@ def human(n):
         n /= 1024
 
 
+LINUX = os.path.isdir("/proc/self")       # macOS has no /proc: there ps tells the same
+
+
 def mem_total():
+    if not LINUX:
+        out = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout.strip()
+        return int(out) if out.isdigit() else 1
     with open("/proc/meminfo") as f:
         for line in f:
             if line.startswith("MemTotal:"):
                 return int(line.split()[1]) * 1024
     return 1
+
+
+def ps_processes():
+    """macOS: [(pid, ppid, uid, state, rss bytes, cpu%, name, command line)] from ps.
+    comm (the program's path) and args may both contain spaces, so they come from two
+    calls, each with the spaced field last."""
+    base = subprocess.run(["ps", "-axo", "pid=,ppid=,uid=,stat=,rss=,%cpu=,comm="],
+                          capture_output=True, text=True).stdout
+    args = {}
+    for line in subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True, text=True).stdout.splitlines():
+        pid, _, cmd = line.strip().partition(" ")
+        if pid.isdigit():
+            args[int(pid)] = cmd.strip()
+    out = []
+    for line in base.splitlines():
+        f = line.split(None, 6)
+        if len(f) < 7 or not f[0].isdigit():
+            continue
+        pid = int(f[0])
+        try:
+            cpu = float(f[5].replace(",", "."))      # some locales write 1,5
+        except ValueError:
+            cpu = 0.0
+        out.append((pid, int(f[1]), int(f[2]), f[3][:1], int(f[4]) * 1024, cpu,
+                    os.path.basename(f[6].strip()), args.get(pid, f[6].strip())))
+    return out
 
 
 def tmux(*args):
@@ -74,6 +106,10 @@ class Procs(TableApp):
         return self.users[uid]
 
     def fetch(self):
+        if not LINUX:
+            return [{"id": pid, "pid": pid, "user": self.user(uid), "uid": uid, "cpu": cpu, "rss": rss,
+                     "name": name, "cmd": cmd, "state": state, "ppid": ppid}
+                    for pid, ppid, uid, state, rss, cpu, name, cmd in ps_processes()]
         now = time.monotonic()
         rows, seen = [], {}
         for d in os.listdir("/proc"):
@@ -111,8 +147,8 @@ class Procs(TableApp):
         return SUB if row["uid"] == ME else DIM
 
     def detail(self, r):
-        states = {"R": "running", "S": "sleeping", "D": "waiting on disk", "Z": "zombie", "T": "stopped",
-                  "I": "idle"}
+        states = {"R": "running", "S": "sleeping", "D": "waiting on disk", "U": "waiting on disk",
+                  "Z": "zombie", "T": "stopped", "I": "idle"}
         mem = f"{r['rss'] / self.total * 100:.1f}% of RAM"
         return (f"{TEXT}{r['cmd']}{DIM}  · {states.get(r['state'], r['state'])} · parent {r['ppid']} · {mem}")
 

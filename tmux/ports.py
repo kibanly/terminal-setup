@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 #  Ports pane of the `system` session (~/.tmux/system.sh)
-#  Listening TCP / UDP ports from `ss -tulpnH`, refreshed every 2 s.
+#  Listening TCP / UDP ports from `ss -tulpnH` (macOS: lsof), refreshed every 2 s.
 #
 #  Double-click a TCP port: open http://localhost:PORT in the Windows browser.
 #  Right-click a port: open it in the browser
@@ -13,6 +13,7 @@
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -44,6 +45,34 @@ def docker_ports():
 PROC = re.compile(r'\("([^"]+)",pid=(\d+)')
 
 
+def sockets():
+    """Listening sockets as (proto, "addr:port", pid or None, program or "?").
+    Linux: ss · macOS: lsof (without sudo it sees your own programs only, like ss)."""
+    if shutil.which("ss"):
+        out = subprocess.run(["ss", "-tulpnH"], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            parts = line.split(None, 6)
+            if len(parts) < 5:
+                continue
+            m = PROC.search(parts[6]) if len(parts) > 6 else None
+            yield parts[0], parts[4], (int(m[2]) if m else None), (m[1] if m else "?")
+        return
+    # two calls: lsof's TCP state filter would also drop every UDP socket
+    out = "".join(subprocess.run(["lsof", "-nP", *sel, "-F", "pcPn"], capture_output=True, text=True).stdout
+                  for sel in (["-iTCP", "-sTCP:LISTEN"], ["-iUDP"]))
+    pid, cmd, proto = None, "?", ""
+    for line in out.splitlines():
+        tag, val = line[:1], line[1:]
+        if tag == "p":
+            pid, cmd = int(val), "?"
+        elif tag == "c":
+            cmd = val
+        elif tag == "P":
+            proto = val.lower()
+        elif tag == "n" and "->" not in val:        # UDP: only bound sockets, not connections
+            yield proto, val, pid, cmd
+
+
 def tmux(*args):
     return subprocess.run(["tmux", *args], capture_output=True, text=True)
 
@@ -69,19 +98,12 @@ class Ports(TableApp):
                Column("name", "PROCESS")]
 
     def fetch(self):
-        out = subprocess.run(["ss", "-tulpnH"], capture_output=True, text=True).stdout
         dock = docker_ports()
         rows, seen = [], set()
-        for line in out.splitlines():
-            parts = line.split(None, 6)
-            if len(parts) < 5:
-                continue
-            proto, local = parts[0], parts[4]
+        for proto, local, pid, name in sockets():
             addr, _, port = local.rpartition(":")
             if not port.isdigit():
                 continue
-            m = PROC.search(parts[6]) if len(parts) > 6 else None
-            pid, name = (int(m[2]), m[1]) if m else (None, "?")
             container = dock.get(int(port)) if proto == "tcp" else None
             if container:
                 name = f"docker:{container}"
@@ -111,7 +133,7 @@ class Ports(TableApp):
                     f"  · http://localhost:{r['port']} · right-click → Show the container")
         if r["pid"] is None:
             return (f"{DIM}{r['proto']} {r['addr']}:{r['port']} · owned by another user (root):"
-                    f" see it with  sudo ss -tulpn | grep :{r['port']}")
+                    f" see it with  sudo {'ss -tulpn' if shutil.which('ss') else 'lsof -nP -i'} | grep :{r['port']}")
         url = f"  · http://localhost:{r['port']}" if r["proto"] == "tcp" else ""
         return f"{TEXT}{r['name']}{DIM} (pid {r['pid']}) on {r['addr']}:{r['port']}{url}"
 
@@ -193,7 +215,7 @@ class Ports(TableApp):
             q = tmux("show", "-gqv", "@ports-query").stdout.strip()
             if q:
                 tmux("set", "-gu", "@ports-query")
-                self.query = q.removeprefix("pid=")
+                self.query = q[4:] if q.startswith("pid=") else q
         super().dispatch(ev)
 
 

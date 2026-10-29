@@ -2,6 +2,7 @@
 # zsh comes with macOS; python3 with the Command Line Tools Homebrew needs anyway.
 
 brew "tmux"                     # ≥ 3.6
+brew "ncurses"                  # tmux-256color terminal description (macOS's ncurses lacks it)
 brew "git"
 brew "jq"
 brew "fzf"

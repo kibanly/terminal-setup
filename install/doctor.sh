@@ -48,7 +48,11 @@ optional docker "the docker tab"
 optional gh "GitHub from the shell"
 [ "$OS" = macos ] || optional snap "snap packages in the packages tab"
 optional brew "Homebrew packages in the packages tab"
-[ "$OS" = macos ] && need flock "" "echo 0"
+if [ "$OS" = macos ]; then
+  need flock "" "echo 0"
+  if infocmp tmux-256color >/dev/null 2>&1; then ok "tmux-256color terminal description"
+  else fail "tmux-256color is unknown to macOS (run ./install.sh)"; problems=$((problems + 1)); fi
+fi
 
 printf '\n  %sLinks%s\n' "$B" "$R"
 for f in .zshrc .zsh_aliases .zsh_functions .tmux .tmux.conf .config/starship.toml .config/btop/btop.conf \
