@@ -116,7 +116,7 @@ En WSL, «abrir en el navegador» y `open` usan el navegador y el Explorador **d
 
 ### macOS
 
-> **Estado**: el instalador y el monitor están adaptados a macOS (procesos con `ps`, puertos con `lsof`, memoria con `vm_stat`, red con `netstat`…) y comprobados con salidas reales de macOS, bash 3.2 y Python 3.9, pero **aún no se han probado en un Mac de verdad**. Si algo falla, `bash install/doctor.sh` es el primer paso.
+> **Estado**: probado en un Mac. El monitor usa las herramientas propias de macOS (procesos con `ps`, puertos con `lsof`, memoria con `vm_stat`, red con `netstat`…). Si algo falla, `bash install/doctor.sh` es el primer paso.
 
 1. **Herramientas de línea de comandos de Apple** (traen git):
    ```bash
@@ -163,7 +163,7 @@ Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta.
 | fzf ≥ 0.48 | apt | binario oficial (`~/.local/bin`) | Homebrew |
 | fastfetch | apt | `.deb` oficial | Homebrew |
 | starship | apt | instalador oficial (`~/.local/bin`) | Homebrew |
-| coreutils, flock | ya vienen | ya vienen | Homebrew |
+| coreutils, flock, bash ≥ 4.2 | ya vienen | ya vienen | Homebrew (el `/bin/bash` de macOS es 3.2; tmux-autoreload necesita uno moderno) |
 | JetBrainsMono Nerd Font | `~/.local/share/fonts` (en WSL: en Windows) | igual | Homebrew |
 | plugins (tpm, resurrect, continuum, extrakto, fzf-url, logging, cowboy, autoreload, fzf-tab) | git | git | git |
 

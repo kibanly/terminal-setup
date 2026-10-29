@@ -19,5 +19,6 @@ brew "zsh-autosuggestions"
 brew "zsh-syntax-highlighting"
 brew "coreutils"                # gdircolors (ls colours), gnumfmt
 brew "flock"                    # the system monitor's lock (Linux has it built in)
+brew "bash"                     # tmux-autoreload needs bash ≥ 4.2 (macOS's /bin/bash is 3.2)
 
 cask "font-jetbrains-mono-nerd-font"
