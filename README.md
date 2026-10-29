@@ -68,7 +68,7 @@ Cada panel tiene su botón de **zoom**, su menú con clic derecho y se adapta a 
 Lo único que necesitas antes es **git**. El instalador hace el resto: te enseña lo que va a hacer y pregunta antes de empezar.
 
 ```bash
-git clone https://github.com/<tu-usuario>/terminal-setup.git ~/workspace/terminal-setup
+git clone https://github.com/kibanly/terminal-setup.git ~/workspace/terminal-setup
 cd ~/workspace/terminal-setup
 ./install.sh
 ```
@@ -81,7 +81,7 @@ Al terminar, **abre una terminal nueva**.
 
 ```bash
 sudo apt update && sudo apt install -y git
-git clone https://github.com/<tu-usuario>/terminal-setup.git ~/workspace/terminal-setup
+git clone https://github.com/kibanly/terminal-setup.git ~/workspace/terminal-setup
 cd ~/workspace/terminal-setup && ./install.sh
 ```
 
@@ -103,7 +103,7 @@ cd ~/workspace/terminal-setup && ./install.sh
 3. **Dentro de Ubuntu**, igual que en Ubuntu:
    ```bash
    sudo apt update && sudo apt install -y git
-   git clone https://github.com/<tu-usuario>/terminal-setup.git ~/workspace/terminal-setup
+   git clone https://github.com/kibanly/terminal-setup.git ~/workspace/terminal-setup
    cd ~/workspace/terminal-setup && ./install.sh
    ```
 4. **La fuente y el perfil se configuran en Windows**, no en Linux: [windows/windows-terminal.md](windows/windows-terminal.md). En resumen, en PowerShell:
@@ -124,7 +124,7 @@ En WSL, «abrir en el navegador» y `open` usan el navegador y el Explorador **d
    ```
 2. **Clona e instala**:
    ```bash
-   git clone https://github.com/<tu-usuario>/terminal-setup.git ~/workspace/terminal-setup
+   git clone https://github.com/kibanly/terminal-setup.git ~/workspace/terminal-setup
    cd ~/workspace/terminal-setup && ./install.sh
    ```
    Si no tienes [Homebrew](https://brew.sh), el instalador lo instala primero (te pedirá la contraseña). Después instala todo con `brew bundle` (lista en [`install/Brewfile`](install/Brewfile)), **fuente incluida**.
