@@ -1,0 +1,12 @@
+# terminal-setup · plugins at the exact versions this setup was tested with.
+# install.sh clones each one and checks out this commit; `update` moves them forward.
+# <folder>  <git url>  <commit>
+tmux/extrakto          https://github.com/laktak/extrakto                 d1af77988081dae496fa4a1f5e5e6bc9ef66767f
+tmux/tmux-autoreload   https://github.com/b0o/tmux-autoreload             e98aa3b74cfd5f2df2be2b5d4aa4ddcc843b2eba
+tmux/tmux-continuum    https://github.com/tmux-plugins/tmux-continuum           0698e8f4b17d6454c71bf5212895ec055c578da0
+tmux/tmux-cowboy       https://github.com/tmux-plugins/tmux-cowboy        75702b6d0a866769dd14f3896e9d19f7e0acd4f2
+tmux/tmux-fzf-url      https://github.com/wfxr/tmux-fzf-url               7c4838e95fde660b7f2aaf514323ac8498e0d4f4
+tmux/tmux-logging      https://github.com/tmux-plugins/tmux-logging       b5c5f7b9bc679ca161a442e932d6186da8d3538f
+tmux/tmux-resurrect    https://github.com/tmux-plugins/tmux-resurrect           cff343cf9e81983d3da0c8562b01616f12e8d548
+tmux/tpm               https://github.com/tmux-plugins/tpm                      e261deb1b47614eed3400089ce7197dc68acc4eb
+zsh/fzf-tab            https://github.com/Aloxaf/fzf-tab                        24105b15714bfec37989ed5c5b6e60f572253019

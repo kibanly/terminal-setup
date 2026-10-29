@@ -1,0 +1,310 @@
+#!/usr/bin/env zsh
+# ═══════════════════════════════════════════════════════════════
+#  terminal · tmux session manager
+#  Used by: the `terminal` shell function (~/.zsh_functions), the Ctrl+a s
+#  popup and `terminal`. New Windows Terminal tabs open the `system` monitor
+#  session instead (~/.tmux/system.sh).
+#  Sessions are created by hand: no project scanning.
+#
+#  Config (env vars):
+#    TERMINAL_NO_AUTOSTART=1  do not open tmux in new tabs (set it in ~/.zshenv)
+# ═══════════════════════════════════════════════════════════════
+
+emulate -L zsh
+setopt extended_glob
+
+B=$'\e[1m' D=$'\e[2m' C=$'\e[36m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' M=$'\e[35m' X=$'\e[0m'
+SELF=${0:A}
+TAB=$'\t'
+
+# ─────────────── Helpers ───────────────
+
+ok()   { print -r -- "${G}✔${X} $*" }
+fail() { print -r -- "${R}✖${X} $*" >&2 }
+
+# Read a line from the user: ask <prompt> [default]
+ask() {
+  local reply
+  print -n -- "${C}$1${X} ${2:+${D}[$2]${X} }" > /dev/tty
+  read -r reply < /dev/tty
+  print -r -- "${reply:-$2}"
+}
+
+# Keep an error on screen until a key is pressed (the popup would close otherwise)
+pause() {
+  print -n -- "${D}press any key${X}" > /dev/tty
+  read -sk < /dev/tty
+}
+
+# y/n confirmation, defaults to no
+confirm() {
+  print -n -- "${Y}$1${X} ${D}(y/N)${X} " > /dev/tty
+  read -q < /dev/tty; local rc=$?
+  print > /dev/tty
+  return $rc
+}
+
+server_running() { tmux show -gv exit-empty &>/dev/null }
+session_exists() { tmux has-session -t "=$1" 2>/dev/null }
+session_names()  { tmux ls -F '#{session_name}' 2>/dev/null }
+current_session() { [[ -n $TMUX ]] && tmux display -p '#S' 2>/dev/null }
+
+# tmux does not allow "." or ":" in session names
+clean_name() { print -r -- ${${1//[.:]/-}//[[:space:]]##/-} }
+
+# ─────────────── Open / create ───────────────
+
+# open_session <name> [dir] — attach, or switch when already inside tmux.
+# New sessions start in <dir> (default: the current folder).
+open_session() {
+  local name=$(clean_name "$1") dir=${2:-$PWD}
+  [[ -z $name ]] && return 1
+
+  if ! session_exists "$name"; then
+    [[ $dir == '~'(/*|) ]] && dir=$HOME${dir#\~}   # expand a typed ~
+    [[ -d $dir ]] || { fail "folder not found: $dir"; return 1 }
+    tmux new-session -d -s "$name" -c "$dir" || return 1
+  fi
+
+  if [[ -n $TMUX ]]; then
+    tmux switch-client -t "=$name"
+  else
+    tmux attach-session -t "=$name"
+  fi
+}
+
+# Ask for the folder of a new session, then open it
+new_session() {
+  local name=$(clean_name "$1")
+  [[ -z $name ]] && return 1
+  session_exists "$name" && { open_session "$name"; return }
+  open_session "$name" "$(ask 'Folder:' "${PWD/#$HOME/~}")"
+}
+
+# ─────────────── Picker (fzf) ───────────────
+
+# One line per entry: kind <TAB> name <TAB> what fzf shows
+picker_lines() {
+  local name wins att dir here=$(current_session)
+  print -r -- "new${TAB}${TAB}${G}+${X} new session ${D}· type a name, then Enter${X}"
+
+  while IFS=$TAB read -r name wins att dir; do
+    [[ -z $name ]] && continue
+    local mark="${D}○${X}"
+    (( att > 0 )) && mark="${G}●${X}"
+    [[ $name == $here ]] && mark="${M}▶${X}"
+    print -r -- "session${TAB}${name}${TAB}${mark} ${B}${name}${X}  ${D}${wins} win · ${dir/#$HOME/~}${X}"
+  done < <(tmux ls -F "#{session_name}${TAB}#{session_windows}${TAB}#{session_attached}${TAB}#{session_path}" 2>/dev/null)
+}
+
+preview() {
+  local kind=$1 name=$2
+  case $kind in
+    session)
+      tmux list-windows -t "=$name" -F "#{?window_active,${M}▶${X},${D}·${X}} #I #W ${D}(#{window_panes} panes)${X}" 2>/dev/null
+      print -r -- "${D}────────────────────────────────${X}"
+      tmux capture-pane -ep -t "=$name:" 2>/dev/null ;;
+    *)
+      print -r -- "${G}${B}New session${X}"; print
+      print -r -- "Type a name and press Enter, then choose its folder"
+      print -r -- "${D}(Enter keeps the current one: ${PWD/#$HOME/~})${X}" ;;
+  esac
+}
+
+pick() {
+  # ~/.tmux/sessions.py: hover, preview, rename / close buttons (close asks first).
+  # The fzf picker below is the fallback when python3 is missing.
+  if (( $+commands[python3] )); then
+    python3 -I ~/.tmux/sessions.py
+    return
+  fi
+
+  if ! (( $+commands[fzf] )); then
+    session_names | sed 's/^/  · /'
+    new_session "$(ask 'Session name:' main)"; return
+  fi
+
+  local out rc query key line kind name
+  local -a lines parts
+  while true; do
+    # --height=100% overrides a --height in FZF_DEFAULT_OPTS (it would shrink the popup)
+    out=$(picker_lines | fzf --ansi --delimiter=$TAB --with-nth=3 --height=100% \
+            --layout=reverse --border=rounded --border-label=" terminal " \
+            --prompt="session ❯ " --pointer="▶" --gutter=" " --info=inline-right \
+            --header="enter open · ctrl-n new · ctrl-r rename · ctrl-x kill · esc close" \
+            --preview="$SELF _preview {1} {2}" \
+            --preview-window=right,55%,border-left \
+            --print-query --expect=ctrl-n,ctrl-r,ctrl-x)
+    rc=$?
+    (( rc == 130 || rc == 2 )) && return 1         # esc / error
+
+    lines=("${(@f)out}")
+    query=$lines[1] key=$lines[2] line=$lines[3]
+    parts=("${(@ps:\t:)line}")
+    kind=$parts[1] name=$parts[2]
+
+    case $key in
+      ctrl-n)
+        name=$(ask 'New session name:' "$query")
+        [[ -z $name ]] && continue
+        new_session "$name" && return
+        pause; continue ;;
+      ctrl-r)
+        [[ $kind == session ]] || continue
+        local new=$(clean_name "$(ask "Rename ${name} to:")")
+        [[ -n $new ]] && { tmux rename-session -t "=$name" "$new" || pause }
+        continue ;;
+      ctrl-x)
+        [[ $kind == session ]] || continue
+        if [[ $name == system ]]; then           # always there: closing it means rebuilding it
+          confirm "The system monitor is always there: restart it?" && ~/.tmux/system.sh restart
+          continue
+        fi
+        if [[ $name == $(current_session) ]] || (( $(tmux display -p -t "=$name" '#{session_attached}' 2>/dev/null) > 0 )); then
+          confirm "Session ${name} is in use. Close it and all its windows anyway?" || continue
+        else
+          confirm "Close session ${name} and all its windows?" || continue
+        fi
+        tmux kill-session -t "=$name"
+        continue ;;
+    esac
+
+    case $kind in
+      session) open_session "$name" && return ;;
+      *)       # "+ new session" line, or Enter with nothing matching
+               name=${query:-$(ask 'New session name:')}
+               [[ -z $name ]] && continue
+               new_session "$name" && return ;;
+    esac
+    pause
+  done
+}
+
+# ─────────────── Auto-start (new Windows Terminal tab) ───────────────
+
+# Start the server so continuum restores the last saved sessions, wait for
+# them to appear, then open the system monitor session.
+autostart() {
+  if ! server_running; then
+    tmux start-server
+    local save
+    for save in ~/.tmux/resurrect/last ${XDG_DATA_HOME:-$HOME/.local/share}/tmux/resurrect/last; do
+      [[ -e $save ]] && { wait_for_restore; break }
+    done
+  fi
+
+  # straight into the system monitor (~/.tmux/system.sh); Ctrl+a s switches session,
+  # Ctrl+a d leaves tmux and comes back to this shell
+  ~/.tmux/system.sh && return
+  print -r -- "${D}Plain shell. Run ${X}${C}terminal${X}${D} any time to open the session picker.${X}"
+}
+
+# Poll until restored sessions stop appearing (max ~8s)
+wait_for_restore() {
+  local i count last=-1 stable=0
+  print -n -- "${D}Restoring saved sessions…${X}"
+  for i in {1..40}; do
+    count=$(session_names | wc -l | tr -d ' ')
+    if (( count > 0 && count == last )); then
+      (( ++stable >= 4 )) && break
+    else
+      stable=0
+    fi
+    last=$count
+    sleep 0.2
+  done
+  print -n -- "\r\e[K"
+}
+
+# ─────────────── List / help ───────────────
+
+list() {
+  local name wins att dir here=$(current_session)
+  local out=$(tmux ls -F "#{session_name}${TAB}#{session_windows}${TAB}#{session_attached}${TAB}#{session_path}" 2>/dev/null)
+  if [[ -z $out ]]; then print -r -- "    ${D}no sessions running${X}"; return; fi
+  while IFS=$TAB read -r name wins att dir; do
+    local mark="${D}○${X}"
+    (( att > 0 )) && mark="${G}●${X}"
+    [[ $name == $here ]] && mark="${M}▶${X}"
+    printf "    %s %-22s ${D}%s window(s) · %s${X}\n" "$mark" "$name" "$wins" "${dir/#$HOME/~}"
+  done <<< "$out"
+}
+
+rename() {
+  local new=$(clean_name "$2")
+  [[ -z $new ]] && { fail "usage: terminal rename <old> <new>"; return 1 }
+  tmux rename-session -t "=$1" "$new" && ok "$1 → ${B}$new${X}"
+}
+
+help() {
+  cat <<EOF
+
+  ${B}${C}▌ terminal${X}  ${D}tmux session manager${X}
+
+  ${B}COMMANDS${X}
+    ${Y}terminal${X}                       session picker
+    ${Y}terminal open${X} <name> [folder]  open, or create it in [folder] ${D}(default: current folder)${X}
+    ${Y}terminal list${X}                  list sessions
+    ${Y}terminal rename${X} <old> <new>    rename a session
+    ${Y}terminal kill${X} <name>           kill a session
+    ${Y}terminal kill-all${X}              kill every session (the system monitor stays)
+    ${Y}terminal system${X}                system monitor ${D}(info · processes & ports · packages · docker · opens in new tabs)${X}
+    ${Y}terminal system restart${X}        rebuild the system monitor
+    ${Y}terminal guide${X}                 tmux guide ${D}(same as Ctrl+a ? inside tmux)${X}
+    ${Y}terminal help${X}                  this panel
+
+  ${B}SESSIONS${X}  ${D}(${G}●${D} attached · ${M}▶${D} current)${X}
+$(list)
+
+  ${D}Inside tmux: ${X}${C}Ctrl+a Space${X}${D} quick menu · ${X}${C}Ctrl+a ?${X}${D} guide · ${X}${C}Ctrl+a s${X}${D} this picker${X}
+  ${D}Disable auto-start: add ${X}export TERMINAL_NO_AUTOSTART=1${D} to ~/.zshenv${X}
+
+EOF
+}
+
+# ─────────────── Entry point ───────────────
+
+case "$1" in
+  ""|pick)          pick ;;
+  autostart)        autostart ;;
+  open|o)           [[ -z $2 ]] && { fail "usage: terminal open <name> [folder]"; exit 1 }
+                    open_session "$2" "$3" ;;
+  list|ls|l)        print; list; print ;;
+  kill|k)           [[ -z $2 ]] && { fail "usage: terminal kill <name>"; exit 1 }
+                    session_exists "$2" || { fail "no session called $2"; exit 1 }
+                    if [[ $2 == system ]]; then
+                      confirm "The system monitor is always there: restart it?" || exit 1
+                      ~/.tmux/system.sh restart && ok "system monitor restarted"
+                      exit
+                    fi
+                    if [[ $2 == $(current_session) ]]; then
+                      confirm "You are inside ${2}. Close it and all its windows?" || exit 1
+                      # this shell dies with the session: queue the picker for this client first
+                      tmux run-shell -b -d 0.3 -C "send-keys -K -c '$(tmux display -p '#{client_name}')' C-a s"
+                    else
+                      confirm "Close session ${2} and all its windows?" || exit 1
+                    fi
+                    tmux kill-session -t "=$2" && ok "killed ${B}$2${X}" ;;
+  # Every session but the system monitor (always there). Saved right away: otherwise the
+  # last auto-save (every 5 min) would bring them all back the next time tmux starts.
+  kill-all)         local -a all=(${(f)"$(session_names)"}); all=(${all:#system})
+                    (( $#all )) || { print -r -- "${D}no sessions running (the system monitor stays)${X}"; exit 0 }
+                    confirm "Close ALL ${#all} sessions${TMUX:+, including the one you are in}? (the system monitor stays)" || exit 1
+                    local here=$(current_session) save=~/.tmux/plugins/tmux-resurrect/scripts/save.sh
+                    for s in ${all:#$here}; do tmux kill-session -t "=$s"; done
+                    ok "${#all} sessions closed · saved, so they do not come back on the next start"
+                    if (( ${all[(Ie)$here]} )); then
+                      # this shell dies with its session: tmux closes it (and saves) once we are gone
+                      tmux run-shell -b "tmux kill-session -t '=$here'; $save quiet"
+                    else
+                      $save quiet 2>/dev/null
+                    fi ;;
+  rename|mv)        [[ -z $3 ]] && { fail "usage: terminal rename <old> <new>"; exit 1 }
+                    rename "$2" "$3" ;;
+  guide|g)          exec ~/.tmux/guide.zsh ;;
+  system|sys)       exec ~/.tmux/system.sh ${2:-open} ;;
+  help|h|-h|--help) help ;;
+  _preview)         preview "$2" "$3" ;;
+  _names)           session_names ;;                 # for zsh completion
+  *)                fail "unknown command: $1"; help; exit 1 ;;
+esac

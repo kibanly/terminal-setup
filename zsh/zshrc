@@ -1,0 +1,131 @@
+# ═══════════════════════════════════════════════════════════════
+#  terminal-setup · zsh  (~/.zshrc is a link to this file)
+#  Ubuntu 24.04 / 26.04, WSL and macOS. What only one system needs is in
+#  zsh/platform/<linux|wsl|macos>.zsh, loaded below. Things for this machine
+#  only (not in the repo): ~/.zshrc.local, read at the end.
+# ═══════════════════════════════════════════════════════════════
+
+TERMINAL_SETUP=${${(%):-%x}:A:h:h}         # the repo: this file is a link into it
+
+typeset -U path fpath
+# Homebrew, when it is installed (macOS: /opt/homebrew or /usr/local · Linux: /home/linuxbrew):
+# brew, what it installs and its completions; ~/.local/bin still wins
+for _brew in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+  [[ -x $_brew ]] && { eval "$($_brew shellenv zsh)"; break }
+done
+unset _brew
+path=("$HOME/.local/bin" $path)
+export EDITOR=micro
+export VISUAL=micro
+export BROWSER=~/.tmux/system/open.sh      # the desktop's browser, whatever the system
+
+# What only this system needs (open, clipboard, ssh-agent, Windows integration…)
+if [[ $OSTYPE == darwin* ]]; then
+  TERMINAL_PLATFORM=macos
+elif [[ -n $WSL_DISTRO_NAME || -e /proc/sys/fs/binfmt_misc/WSLInterop || -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]]; then
+  TERMINAL_PLATFORM=wsl
+else
+  TERMINAL_PLATFORM=linux
+fi
+source "$TERMINAL_SETUP/zsh/platform/$TERMINAL_PLATFORM.zsh"
+
+# History
+HISTSIZE=100000
+SAVEHIST=100000
+HISTFILE=~/.zsh_history
+setopt SHARE_HISTORY EXTENDED_HISTORY HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE \
+       HIST_FIND_NO_DUPS HIST_REDUCE_BLANKS HIST_VERIFY
+setopt AUTO_CD INTERACTIVE_COMMENTS
+
+# Keybindings
+bindkey -e
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+bindkey '^[[A' up-line-or-beginning-search   '^[OA' up-line-or-beginning-search
+bindkey '^[[B' down-line-or-beginning-search '^[OB' down-line-or-beginning-search
+bindkey '^[[1;5C' forward-word  '^[[1;5D' backward-word
+bindkey '^[[H' beginning-of-line '^[OH' beginning-of-line
+bindkey '^[[F' end-of-line       '^[OF' end-of-line
+bindkey '^[[1~' beginning-of-line '^[[4~' end-of-line   # Home/End inside tmux
+bindkey '^[[3~' delete-char
+bindkey '^H' backward-kill-word
+
+# Autocomplete
+ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=100
+ZSH_HIGHLIGHT_MAXLENGTH=512
+
+autoload -Uz compinit && compinit
+# LS_COLORS (also used by completion): dircolors on Linux, gdircolors (coreutils) on macOS
+if (( $+commands[dircolors] )); then eval "$(dircolors -b)"
+elif (( $+commands[gdircolors] )); then eval "$(gdircolors -b)"
+fi
+zstyle ':completion:*' menu no
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
+zstyle ':completion:*:git-checkout:*' sort false
+zstyle ':completion:*:descriptions' format '[%d]'
+zstyle ':fzf-tab:*' switch-group '<' '>'
+zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
+zstyle ':fzf-tab:complete:(micro|bat|cat|vim):*' fzf-preview \
+  'bat -n --color=always --line-range :200 $realpath 2>/dev/null || eza -1 --color=always $realpath'
+
+export FZF_DEFAULT_OPTS='--height=40% --layout=reverse --border'
+export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always --line-range :200 {} 2>/dev/null || eza --tree --level=2 --color=always {}'"
+export FZF_ALT_C_OPTS="--preview 'eza --tree --level=2 --color=always {}'"
+
+[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+
+# Alias and functions
+[ -f ~/.zsh_aliases ] && source ~/.zsh_aliases
+[ -f ~/.zsh_functions ] && source ~/.zsh_functions
+
+# Plugins
+[ -f ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh ] && source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
+(( $+commands[fzf] )) && source <(fzf --zsh)
+(( $+commands[starship] )) && eval "$(starship init zsh)"
+# zsh-autosuggestions and zsh-syntax-highlighting (this one last): from apt or from Homebrew
+for _p in zsh-autosuggestions/zsh-autosuggestions.zsh zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
+  for _d in /usr/share ${HOMEBREW_PREFIX:+$HOMEBREW_PREFIX/share}; do
+    [[ -f $_d/$_p ]] && { source "$_d/$_p"; break }
+  done
+done
+unset _p _d
+
+# tmux: leaving the last pane of a session (exit, or Ctrl+D on an empty line) closes the
+# whole session, so it asks first, like Ctrl+a x. Anywhere else (other panes, nested
+# shells, subshells, outside tmux) exit and Ctrl+D work as always.
+if [[ -n $TMUX && -n $TMUX_PANE ]]; then
+  _tmux_leave_ok() {          # fine to leave: not the session's last pane, or you said yes
+    (( ZSH_SUBSHELL == 0 )) || return 0
+    local info=$(tmux display -p -t "$TMUX_PANE" \
+      '#{pane_pid} #{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}} #S' 2>/dev/null)
+    local -a f=(${=info})
+    [[ $f[1] == $$ && $f[2] == 1 ]] || return 0
+    read -q "?Last pane of session ${f[3]}: leaving closes the session. Continue? (y/N) "
+    local ok=$?; print; return $ok
+  }
+  exit() { _tmux_leave_ok && builtin exit "$@" }
+  setopt IGNORE_EOF           # Ctrl+D goes to the widget below instead of ending the shell
+  _tmux_ctrl_d() {
+    [[ -n $BUFFER ]] && { zle delete-char-or-list; return }
+    zle -I
+    _tmux_leave_ok && builtin exit
+    zle reset-prompt
+  }
+  zle -N _tmux_ctrl_d
+  bindkey '^D' _tmux_ctrl_d
+fi
+
+# Things for this machine only (not in the repo) · before the tmux autostart, so it can turn it off
+[ -f ~/.zshrc.local ] && source ~/.zshrc.local
+
+# tmux in every new terminal window or tab, straight into the system monitor (Ctrl+a d
+# leaves tmux for this plain shell). Skipped inside tmux, nested shells, IDE terminals, SSH and Claude Code.
+# Disable with: export TERMINAL_NO_AUTOSTART=1 in ~/.zshrc.local (or ~/.zshenv)
+if [[ -o interactive && -t 0 && -t 1 && -z $TMUX && $SHLVL == 1
+      && -z $TERMINAL_NO_AUTOSTART && -z $CLAUDECODE && -z $SSH_CONNECTION
+      && $TERM_PROGRAM != vscode && $TERMINAL_EMULATOR != JetBrains* ]] \
+   && (( $+commands[tmux] )) && [[ -x ~/.tmux/terminal.zsh ]]; then
+  ~/.tmux/terminal.zsh autostart
+fi

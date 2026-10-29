@@ -1,0 +1,22 @@
+{
+  "clipboard": "external",
+  "colorscheme": "one-dark",
+  "tabsize": 4,
+  "tabstospaces": true,
+  "softwrap": true,
+  "wordwrap": true,
+  "mouse": true,
+  "savecursor": true,
+  "saveundo": true,
+  "diffgutter": true,
+  "rmtrailingws": true,
+  "eofnewline": true,
+  "hlsearch": true,
+  "scrollmargin": 5,
+  "ft:makefile": { "tabstospaces": false },
+  "ft:go": { "tabstospaces": false },
+  "ft:yaml": { "tabsize": 2 },
+  "ft:json": { "tabsize": 2 },
+  "ft:javascript": { "tabsize": 2 },
+  "ft:typescript": { "tabsize": 2 }
+}

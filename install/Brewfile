@@ -1,0 +1,22 @@
+# terminal-setup · macOS packages (brew bundle --file=install/Brewfile)
+# zsh comes with macOS; python3 with the Command Line Tools Homebrew needs anyway.
+
+brew "tmux"                     # ≥ 3.6
+brew "git"
+brew "jq"
+brew "fzf"
+brew "eza"
+brew "bat"
+brew "micro"
+brew "btop"
+brew "fastfetch"
+brew "entr"                     # tmux-autoreload
+brew "ansifilter"               # tmux-logging: clean logs
+brew "git-delta"
+brew "starship"
+brew "zsh-autosuggestions"
+brew "zsh-syntax-highlighting"
+brew "coreutils"                # gdircolors (ls colours), gnumfmt
+brew "flock"                    # the system monitor's lock (Linux has it built in)
+
+cask "font-jetbrains-mono-nerd-font"

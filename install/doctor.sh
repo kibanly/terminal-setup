@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════
+#  terminal-setup · check that everything is in place (run by install.sh, or alone:
+#  bash install/doctor.sh). ✔ fine · ✘ needed and missing / too old · – optional
+# ═══════════════════════════════════════════════════════════════
+
+REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+. "$REPO/install/lib.sh"
+. "$REPO/install/versions.sh"
+detect_platform
+problems=0
+
+# need <command> [minimum version] [command that prints the version]
+need() {
+  local cmd=$1 min=${2:-} ver
+  if ! have "$cmd"; then
+    fail "$cmd is missing"; problems=$((problems + 1)); return
+  fi
+  ver=$(eval "${3:-$cmd --version}" 2>/dev/null | grep -Eo '[0-9]+(\.[0-9]+)+[a-z]?' | head -1)
+  if [ -n "$min" ] && ! version_ge "${ver:-0}" "$min"; then
+    fail "$cmd ${ver:-?} is too old (needs ≥ $min)"; problems=$((problems + 1))
+  else
+    ok "$cmd ${ver}"
+  fi
+}
+optional() {
+  if have "$1" || { [ "$1" = brew ] && [ -n "$(ls /opt/homebrew/bin/brew /usr/local/bin/brew \
+       /home/linuxbrew/.linuxbrew/bin/brew 2>/dev/null)" ]; }; then ok "$1 ${D}(optional: $2)${R}"; else info "${D}– $1 not installed (optional: $2)${R}"; fi
+}
+
+printf '\n  %sTools%s\n' "$B" "$R"
+need zsh
+need tmux "$TMUX_MIN" "tmux -V"
+need git
+need python3 "$PYTHON_MIN"
+need fzf "$FZF_MIN"
+need starship
+need eza
+need bat
+need micro
+need btop
+need fastfetch
+need jq
+need entr "" "entr -h 2>&1 | head -1; echo 0"
+need ansifilter
+need delta
+optional docker "the docker tab"
+optional gh "GitHub from the shell"
+[ "$OS" = macos ] || optional snap "snap packages in the packages tab"
+optional brew "Homebrew packages in the packages tab"
+[ "$OS" = macos ] && need flock "" "echo 0"
+
+printf '\n  %sLinks%s\n' "$B" "$R"
+for f in .zshrc .zsh_aliases .zsh_functions .tmux .tmux.conf .config/starship.toml .config/btop/btop.conf \
+         .config/micro/settings.json; do
+  target=$(readlink "$HOME/$f" 2>/dev/null || true)
+  case $target in
+    "$REPO"/*) ok "~/$f" ;;
+    "") fail "~/$f is not a link to the repo (run ./install.sh)"; problems=$((problems + 1)) ;;
+    *)  fail "~/$f links somewhere else: $target"; problems=$((problems + 1)) ;;
+  esac
+done
+
+printf '\n  %sPlugins%s\n' "$B" "$R"
+while read -r name url commit; do
+  case $name in tmux/*) dir=$HOME/.tmux/plugins/${name#tmux/} ;; zsh/*) dir=$HOME/.zsh/plugins/${name#zsh/} ;; esac
+  if [ -d "$dir/.git" ]; then ok "${name#*/}"; else fail "${name#*/} is missing (run ./install.sh)"; problems=$((problems + 1)); fi
+done < <(grep -v '^#' "$REPO/install/plugins.lock")
+
+printf '\n  %sFont%s\n' "$B" "$R"
+. "$REPO/install/fonts.sh"
+font_plan
+case $FONT_TODO in
+  none)    ok "JetBrainsMono Nerd Font is installed" ;;
+  remote)  info "${D}– no desktop here: the font belongs on the computer you connect from${R}" ;;
+  windows) fail "JetBrainsMono Nerd Font is not installed in Windows (see windows/windows-terminal.md)"; problems=$((problems + 1)) ;;
+  linux)   fail "JetBrainsMono Nerd Font is not installed (run ./install.sh)"; problems=$((problems + 1)) ;;
+esac
+info "${D}icons look right only if your terminal uses it: \"JetBrainsMono Nerd Font\"${R}"
+
+printf '\n'
+if [ "$problems" = 0 ]; then
+  printf '  %s✔ all good%s\n' "$GREEN$B" "$R"
+else
+  printf '  %s✘ %s problem(s) above%s\n' "$RED$B" "$problems" "$R"
+  exit 1
+fi

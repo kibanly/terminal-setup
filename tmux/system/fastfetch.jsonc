@@ -1,0 +1,12 @@
+// fastfetch layout for the Info pane of the `system` tmux session (~/.tmux/system/info.sh).
+// Only what is useful in WSL, and disks limited to / and C: so lines stay short.
+{
+  "modules": [
+    "title", "separator",
+    "os", "host", "kernel", "uptime", "packages",
+    "cpu", "gpu", "memory", "swap",
+    { "type": "disk", "folders": "/:/mnt/c" },
+    "localip",
+    "break", "colors"
+  ]
+}
