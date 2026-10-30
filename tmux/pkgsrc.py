@@ -15,12 +15,14 @@
 #    pkgsrc.py mine [source]   the packages you installed: source name version description
 #    pkgsrc.py find NAME       NAME wherever it is installed (also as a dependency)
 #    pkgsrc.py sources         the sources there are
+#    pkgsrc.py base            (re)build ~/.apt-base.txt, the apt packages the system came with
 #  (tab-separated lines)
 #  Slow answers (brew, the snap store) come from Background: a pane gets what is
 #  known now and redraws when the rest arrives, so it never freezes.
 # ═══════════════════════════════════════════════════════════════
 
 import glob
+import gzip
 import http.client
 import json
 import os
@@ -124,15 +126,59 @@ class Apt:
     def available():
         return shutil.which("apt-get") is not None
 
-    def mine(self):
-        """Manual packages minus the base WSL image (same as `installed-packages`)."""
+    tried_base = False              # build_base() failed once: not again every reload
+
+    @staticmethod
+    def image_packages():
+        """The packages the system came with: the apt line that built the image (WSL, cloud
+        images) or the installer's list (desktop / server installs). None when neither is left."""
+        found = set()
+        for log in glob.glob("/var/log/apt/history.log*"):
+            try:
+                with (gzip.open if log.endswith(".gz") else open)(log, "rt", errors="replace") as f:
+                    for line in f:
+                        if "AutoInstall=yes install " in line:
+                            found.update(line.split(" install ", 1)[1].split())
+            except OSError:
+                pass
+        if found:
+            return found
+        try:
+            with gzip.open("/var/log/installer/initial-status.gz", "rt", errors="replace") as f:
+                found = {l.split(":", 1)[1].strip() for l in f if l.startswith("Package:")}
+        except OSError:
+            pass
+        return found or None
+
+    def build_base(self):
+        """Write ~/.apt-base.txt from image_packages() · the number of packages, or None."""
+        base = self.image_packages()
+        if base is None:
+            return None
+        with open(self.BASE, "w") as f:
+            f.write("".join(f"{p}\n" for p in sorted(base)))
+        return len(base)
+
+    def base(self):
         try:
             with open(self.BASE) as f:
-                base = {l.strip() for l in f if l.strip()}
+                return {l.strip() for l in f if l.strip()}
         except FileNotFoundError:
-            self.error = "~/.apt-base.txt is missing: run  installed-packages  once in a shell to create it"
-            return []
-        self.error, self.base_count = "", len(base)
+            pass
+        if not self.tried_base:
+            self.tried_base = True
+            if self.build_base() is not None:
+                return self.base()
+        return None
+
+    def mine(self):
+        """Manual packages minus the ones the system came with (same as `installed-packages`)."""
+        base = self.base()
+        if base is None:
+            self.error, self.base_count, base = ("apt: no record of the packages the system came with "
+                                                 "(apt history rotated?): showing every manual one"), 0, set()
+        else:
+            self.error, self.base_count = "", len(base)
         mine = sorted(set(run_text("apt-mark", "showmanual").split()) - base)
         if not mine:
             return []
@@ -683,6 +729,13 @@ def main(argv):
                 print("\t".join((s.name, p["name"], clean(p.get("version")), clean(p.get("desc")))))
             if s.error:
                 print(s.error, file=sys.stderr)
+    elif argv[:1] == ["base"]:                  # (re)build ~/.apt-base.txt
+        apt = source("apt")
+        n = apt.build_base() if apt else None
+        if n is None:
+            print("❌ No record of the packages the system came with (apt history rotated?)", file=sys.stderr)
+            return 1
+        print(f"✅ Saved {n} base packages to ~/.apt-base.txt")
     elif argv[:1] == ["find"] and len(argv) == 2:
         found = 0
         for s in sources():
@@ -693,7 +746,7 @@ def main(argv):
                 found += 1
         return 0 if found else 1
     else:
-        print("usage: pkgsrc.py mine [apt|snap|brew] · find NAME · sources", file=sys.stderr)
+        print("usage: pkgsrc.py mine [apt|snap|brew] · find NAME · sources · base", file=sys.stderr)
         return 2
     return 0
 

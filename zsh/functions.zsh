@@ -364,7 +364,7 @@ installed-packages() {
         print "  installed-packages -s <source>          only apt, snap or brew"
         print "  installed-packages <pkg>                show a single package (or snap:<pkg>, brew:<pkg>)"
         print "  installed-packages <pkg> -n [reason]    set why it was installed (no reason = remove)"
-        print "  installed-packages -r, --rebuild        regenerate the apt base list from apt history"
+        print "  installed-packages -r, --rebuild        regenerate the apt base list (what the system came with)"
         return 0 ;;
       -*) print "❌ Unknown option: $1"; return 1 ;;
       *)
@@ -380,15 +380,9 @@ installed-packages() {
     esac
   done
 
-  # 1. Save the apt base image package list (only once, or with --rebuild; only with apt)
-  if (( $+commands[apt-get] )) && { (( rebuild )) || [[ ! -s $base ]] }; then
-    local -a logs=(/var/log/apt/history.log*(N)) basepkgs
-    (( $#logs )) || { print "❌ No apt history found in /var/log/apt"; return 1 }
-    basepkgs=(${(f)"$(zgrep -h 'AutoInstall=yes install' $logs 2>/dev/null \
-      | sed 's/.* install //' | tr ' ' '\n' | LC_ALL=C sort -u)"})
-    (( $#basepkgs )) || { print "❌ Base install not found in apt history (logs rotated?)"; return 1 }
-    print -rl -- $basepkgs > $base
-    print "✅ Saved ${#basepkgs} base packages to ${base/#$HOME/~}"
+  # 1. --rebuild: the apt base list again (otherwise pkgsrc.py makes it the first time)
+  if (( rebuild )); then
+    _pkgsrc base || return 1
     print
   fi
 
