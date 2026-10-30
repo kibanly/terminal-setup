@@ -50,9 +50,9 @@ login_shell_zsh() {
   zsh_path=$(command -v zsh || true)
   [ -n "$zsh_path" ] || { warn "zsh is not installed: skipped"; return; }
   if [ "$OS" = macos ]; then
-    current=$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')
+    current=$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}' || true)
   else
-    current=$(getent passwd "$USER" | cut -d: -f7)
+    current=$(getent passwd "$USER" | cut -d: -f7 || true)
   fi
   case $current in */zsh) ok "zsh is already your login shell"; return ;; esac
   step "Login shell"
@@ -128,9 +128,10 @@ if [ "$DRY_RUN" = 0 ] && tmux info >/dev/null 2>&1; then
   fi
 fi
 
+doctor_rc=0
 if [ "$DRY_RUN" = 0 ]; then
   step "Check"
-  bash "$REPO/install/doctor.sh" || true
+  bash "$REPO/install/doctor.sh" || doctor_rc=$?
 fi
 
 [ "${FONT_TODO:-}" = windows ] && font_windows_steps
@@ -141,3 +142,4 @@ cat <<EOF
     system monitor; Ctrl+a ? shows every shortcut, Ctrl+a Space the quick menu.
 
 EOF
+exit "$doctor_rc"            # the check found problems: scripts (make install YES=1) can tell

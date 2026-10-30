@@ -61,8 +61,12 @@ def short_state(state, status):
 
 
 def host_ports(ports):
-    """'0.0.0.0:40525->1025/tcp, [::]:40525->1025/tcp, 6379/tcp' → [40525]."""
-    return sorted({int(p) for p in re.findall(r":(\d+)->", ports or "")})
+    """'0.0.0.0:40525->1025/tcp, [::]:40525->1025/tcp, 6379/tcp' → [40525] · ranges too:
+    '0.0.0.0:8000-8002->8000-8002/tcp' → [8000, 8001, 8002]."""
+    found = set()
+    for a, b in re.findall(r":(\d+)(?:-(\d+))?->", ports or ""):
+        found.update(range(int(a), int(b or a) + 1))
+    return sorted(found)
 
 
 def mem_bytes(text):
@@ -82,25 +86,29 @@ def human(n):
 
 
 class Stats(threading.Thread):
-    """docker stats --no-stream takes ~1 s: keep fresh numbers without blocking the pane."""
+    """docker stats --no-stream takes ~1 s: keep fresh numbers without blocking the pane.
+    Only while the pane is in sight (`wanted`): it is the heaviest thing the monitor runs."""
 
     def __init__(self):
         super().__init__(daemon=True)
         self.data = {}
+        self.wanted = threading.Event()
 
     def run(self):
         while True:
+            self.wanted.wait()
             res = docker("stats", "--no-stream", "--format", "{{json .}}", timeout=20)
             if res and res.returncode == 0:
                 data = {}
                 for line in res.stdout.splitlines():
+                    # a container caught stopping or restarting shows "--": no numbers for it
                     try:
                         s = json.loads(line)
+                        cpu = float(s.get("CPUPerc", "0%").rstrip("%") or 0)
                     except ValueError:
                         continue
                     used, _, limit = s.get("MemUsage", "").partition("/")
-                    data[s.get("Name")] = (float(s.get("CPUPerc", "0%").rstrip("%") or 0),
-                                           mem_bytes(used), mem_bytes(limit))
+                    data[s.get("Name")] = (cpu, mem_bytes(used), mem_bytes(limit))
                 self.data = data
             time.sleep(3)
 
@@ -128,6 +136,8 @@ class Containers(TableApp):
         self.arch_cache = {}
         self.error = ""
         super().__init__(screen)
+        if self.visible:
+            self.stats.wanted.set()
 
     def image_arch(self, image):
         if image not in self.arch_cache:
@@ -138,7 +148,10 @@ class Containers(TableApp):
     def fetch(self):
         res = docker("ps", "-a", "--format", "{{json .}}")
         if res is None or res.returncode:
-            self.error = "Docker is not running (or not installed): start Docker Desktop / the docker service"
+            if res and "permission denied" in res.stderr.lower():
+                self.error = "no access to Docker: sudo usermod -aG docker $USER, then open a new login session"
+            else:
+                self.error = "Docker is not running (or not installed): start Docker Desktop / the docker service"
             return []
         self.error = ""
         found = []
@@ -211,17 +224,24 @@ class Containers(TableApp):
     def selected(self, r):
         tmuxlink.put("@docker-selected", r["name"] if r else "")
 
+    watch = ("@docker-focus",)
+
+    def on_tick(self):
+        self.stats.wanted.set()                  # in sight: docker stats runs (see Stats)
+        want = self.opts.get("@docker-focus")    # "show this container" from the Ports pane
+        if want:
+            tmuxlink.put("@docker-focus", None)
+            self.query = ""
+            self.reload()
+            for r in self.rows:
+                if r["name"] == want:
+                    self.cur_id = self.sel_id = r["id"]
+                    self.ensure_visible()
+
     def dispatch(self, ev):
-        if ev[0] == "tick":                      # "show this container" from the Ports pane
-            want = tmuxlink.take("@docker-focus")
-            if want:
-                self.query = ""
-                self.reload()
-                for r in self.rows:
-                    if r["name"] == want:
-                        self.cur_id = self.sel_id = r["id"]
-                        self.ensure_visible()
         super().dispatch(ev)
+        if not self.visible:
+            self.stats.wanted.clear()            # out of sight: no docker stats for nobody
 
     # ─── menu ───
     def menu_title(self, r):

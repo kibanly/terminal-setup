@@ -210,15 +210,14 @@ def focus(label):
 
 class LinkedProcs(Procs):
     """Takes a filter from the Ports pane (@procs-query) on each refresh."""
+    watch = ("@procs-query",)
 
-    def dispatch(self, ev):
-        if ev[0] == "tick":
-            q = tmux("show", "-gqv", "@procs-query").stdout.strip()
-            if q:
-                tmux("set", "-gu", "@procs-query")
-                self.query = q
-                self.query_changed()
-        super().dispatch(ev)
+    def on_tick(self):
+        q = (self.opts.get("@procs-query") or "").strip()
+        if q:
+            tmux("set", "-gu", "@procs-query")
+            self.query = q
+            self.query_changed()
 
 
 if __name__ == "__main__":

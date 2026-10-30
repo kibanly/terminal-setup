@@ -20,7 +20,16 @@ if [[ -z $SSH_AUTH_SOCK || $SSH_AUTH_SOCK == $HOME/.ssh/agent.sock ]]; then
   export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
   ssh-add -l >/dev/null 2>&1
   if (( $? == 2 )); then
-    mkdir -p ~/.ssh && rm -f "$SSH_AUTH_SOCK"
-    eval "$(ssh-agent -t 8h -a "$SSH_AUTH_SOCK")" >/dev/null
+    # many shells start at once when tmux restores its sessions: one starts the agent, the
+    # others wait for it (else each would delete the socket of the one before)
+    mkdir -p ~/.ssh && : >> ~/.ssh/agent.lock
+    zmodload zsh/system && zsystem flock -t 5 -f _agent_lock ~/.ssh/agent.lock 2>/dev/null
+    ssh-add -l >/dev/null 2>&1
+    if (( $? == 2 )); then
+      rm -f "$SSH_AUTH_SOCK"
+      eval "$(ssh-agent -t 8h -a "$SSH_AUTH_SOCK")" >/dev/null
+    fi
+    [[ -n $_agent_lock ]] && zsystem flock -u $_agent_lock
+    unset _agent_lock
   fi
 fi

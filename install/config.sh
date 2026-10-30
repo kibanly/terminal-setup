@@ -28,7 +28,14 @@ block_tmux() {
     "TERMINAL_SETUP=\"$REPO\"" 'source-file "$TERMINAL_SETUP/tmux/tmux.conf"' "$MARK_END"
 }
 
-has_block()   { [ -f "$1" ] && grep -qF "$MARK_BEGIN" "$1"; }
+# the marks count at the start of a line only, everywhere (has_block, block_in, the rewrites)
+has_block()   { [ -f "$1" ] && awk -v b="$MARK_BEGIN" 'index($0,b)==1{f=1} END{exit !f}' "$1"; }
+# a begin mark with no end mark after it (a line edited by hand): rewriting the file would
+# drop everything below it, so the install and uninstall stop instead
+check_marks() {
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" 'index($0,b)==1{on=1} on&&index($0,e)==1{on=0} END{exit on}' "$1" \
+    || die "$(tilde "$1") has the line \"$MARK_BEGIN\" but no \"$MARK_END\" after it: put it back (or take both out), then run this again"
+}
 block_in()    { awk -v b="$MARK_BEGIN" -v e="$MARK_END" 'index($0,b)==1{on=1} on{print} index($0,e)==1{on=0}' "$1"; }
 # the file without the block, and without the blank lines left at its end
 without_block() {
@@ -41,8 +48,10 @@ without_block() {
 add_block() {
   local file=$1 block=$2 tmp
   if has_block "$file"; then
+    check_marks "$file"
     if [ "$(block_in "$file")" = "$block" ]; then ok "$(tilde "$file") already loads terminal-setup"; return; fi
     [ "$DRY_RUN" = 1 ] && { info "[dry-run] update the terminal-setup lines in $(tilde "$file")"; return; }
+    backup_copy "$file"
     tmp=$(mktemp)
     printf '%s\n' "$block" > "$tmp.block"
     awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v f="$tmp.block" '
@@ -64,12 +73,13 @@ add_block() {
   ok "$(tilde "$file") loads terminal-setup (lines added at its end)"
 }
 
-# a copy of the file as it was, just in case (the file itself stays where it is)
+# a copy of the file as it was, just in case (the file itself stays where it is) · a link
+# (stow, chezmoi…) is copied with what it points to: that is what gets changed
 backup_copy() {
   local rel=${1#"$HOME"/}
   [ -e "$BACKUP_DIR/$rel" ] && return
   mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-  cp -P "$1" "$BACKUP_DIR/$rel"
+  cp -L "$1" "$BACKUP_DIR/$rel" 2>/dev/null || cp -P "$1" "$BACKUP_DIR/$rel"
 }
 
 links_into_repo() {

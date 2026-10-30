@@ -154,7 +154,8 @@ def mark(line, terms):
     if not terms:
         return line
     plain = ANSI.sub("", line)
-    low = plain.lower()
+    # lower-cased one character at a time: some grow ("İ" → "i̇"), and positions must match plain
+    low = "".join(c if len(c.lower()) != 1 else c.lower() for c in plain)
     spans = []
     for t in terms:
         start = low.find(t)

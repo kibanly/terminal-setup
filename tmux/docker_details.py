@@ -30,7 +30,7 @@ BAT = shutil.which("bat") or shutil.which("batcat")
 
 
 def tilde(p):
-    return "~" + p[len(HOME):] if p.startswith(HOME) else p
+    return "~" + p[len(HOME):] if p == HOME or p.startswith(HOME + "/") else p
 
 
 def docker(*args, cwd=None, timeout=15):
@@ -58,6 +58,7 @@ def when(stamp):
 
 SECRET_KEY = re.compile(r"PASS|SECRET|TOKEN|KEY|PRIVATE|CREDENTIAL|DSN|AUTH", re.I)
 URL_PASSWORD = re.compile(r"(\w+://[^:/@\s]+:)([^@\s]+)(@)")
+REDIS_PASSWORD = re.compile(r"(redis-cli\b[^;|&]*?\s-a\s+)(\S+)")      # inside a CMD-SHELL string
 
 
 def hide(key, value):
@@ -70,17 +71,19 @@ def hide(key, value):
 
 
 def hide_args(args):
-    """A command line with its secrets hidden: --password=x, --requirepass x, TOKEN=x, URLs."""
-    out, hide_next = [], False
+    """A command line with its secrets hidden: --password=x, --requirepass x, TOKEN=x, URLs,
+    and redis-cli's -a x (the usual compose healthcheck)."""
+    out, hide_next, redis = [], False, False
     for a in args:
         a = str(a)
+        redis = redis or "redis-cli" in a
         if hide_next and not a.startswith("-"):
             out.append("••••")
         elif "=" in a and SECRET_KEY.search(a.split("=", 1)[0]):
             out.append(a.split("=", 1)[0] + "=••••")
         else:
-            out.append(URL_PASSWORD.sub(r"\1••••\3", a))
-        hide_next = a.startswith("-") and "=" not in a and bool(SECRET_KEY.search(a))
+            out.append(REDIS_PASSWORD.sub(r"\1••••", URL_PASSWORD.sub(r"\1••••\3", a)))
+        hide_next = (a.startswith("-") and "=" not in a and bool(SECRET_KEY.search(a))) or (redis and a == "-a")
     return out
 
 

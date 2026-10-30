@@ -60,8 +60,8 @@ def tilde(path):
 
 
 def clean_name(name):
-    """tmux does not allow '.' or ':' in session names."""
-    return re.sub(r"\s+", "-", re.sub(r"[.:]", "-", name.strip()))
+    """tmux does not allow '.' or ':' in session names (a leading '-' would read as an option)."""
+    return re.sub(r"\s+", "-", re.sub(r"[.:]", "-", name.strip())).lstrip("-")
 
 
 class Picker:

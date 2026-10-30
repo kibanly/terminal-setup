@@ -46,8 +46,8 @@ as_root() {
 # version_ge 3.6a 3.6 → true · compares the numeric parts (3.6a → 3 6)
 version_ge() {
   local a b i x y
-  a=$(printf '%s' "$1" | sed 's/[^0-9.].*//; s/\.$//')
-  b=$(printf '%s' "$2" | sed 's/[^0-9.].*//; s/\.$//')
+  a=$(printf '%s' "$1" | sed 's/^[^0-9]*//; s/[^0-9.].*//; s/\.$//')     # next-3.7 → 3.7 too
+  b=$(printf '%s' "$2" | sed 's/^[^0-9]*//; s/[^0-9.].*//; s/\.$//')
   IFS=. read -r -a x <<< "$a"
   IFS=. read -r -a y <<< "$b"
   for i in 0 1 2 3; do

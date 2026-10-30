@@ -103,7 +103,7 @@ if [[ -n $TMUX && -n $TMUX_PANE ]]; then
       '#{pane_pid} #{&&:#{==:#{session_windows},1},#{==:#{window_panes},1}} #S' 2>/dev/null)
     local -a f=(${=info})
     [[ $f[1] == $$ && $f[2] == 1 ]] || return 0
-    read -q "?Last pane of session ${f[3]}: leaving closes the session. Continue? (y/N) "
+    read -q "?Last pane of session ${info#* * }: leaving closes the session. Continue? (y/N) "
     local ok=$?; print; return $ok
   }
   exit() { _tmux_leave_ok && builtin exit "$@" }
@@ -121,9 +121,18 @@ fi
 # tmux in every new terminal window or tab, straight into the system monitor (Ctrl+a d
 # leaves tmux for this plain shell). Skipped inside tmux, nested shells, IDE terminals, SSH and Claude Code.
 # Disable with: export TERMINAL_NO_AUTOSTART=1 in ~/.zshrc, above the terminal-setup line
-if [[ -o interactive && -t 0 && -t 1 && -z $TMUX && $SHLVL == 1
+# It starts at the first prompt, once all of ~/.zshrc has run: tmux (and the monitor) get
+# what you set below the terminal-setup line too. Only once: `exec zsh` after Ctrl+a d stays out.
+if [[ -o interactive && -t 0 && -t 1 && -z $TMUX && $SHLVL == 1 && -z $TERMINAL_AUTOSTARTED
       && -z $TERMINAL_NO_AUTOSTART && -z $CLAUDECODE && -z $SSH_CONNECTION
       && $TERM_PROGRAM != vscode && $TERMINAL_EMULATOR != JetBrains* ]] \
    && (( $+commands[tmux] )) && [[ -x $TERMINAL_SETUP/tmux/terminal.zsh ]]; then
-  $TERMINAL_SETUP/tmux/terminal.zsh autostart
+  _terminal_autostart() {
+    add-zsh-hook -d precmd _terminal_autostart
+    unfunction _terminal_autostart
+    [[ -n $TERMINAL_NO_AUTOSTART ]] && return     # also when set below the terminal-setup line
+    export TERMINAL_AUTOSTARTED=1
+    $TERMINAL_SETUP/tmux/terminal.zsh autostart
+  }
+  add-zsh-hook precmd _terminal_autostart
 fi

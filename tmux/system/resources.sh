@@ -7,6 +7,8 @@
 #    Web      online?, latency to 1.1.1.1, interface and IP
 #  GPU only when nvidia-smi exists (WSL ships it in /usr/lib/wsl/lib).
 #  Never prints more lines than the pane has (no scrolling, no flicker).
+#  Out of sight (another tab or session, nobody attached) it reads nothing and pings
+#  nobody: tmux wakes it with SIGUSR1 when its tab comes into sight (tmuxlink.note_wake).
 #  Linux reads /proc; macOS asks ps, vm_stat, sysctl, netstat and route (see the
 #  *_read / *_sample functions). bash 3.2 compatible (macOS's /bin/bash).
 # ═══════════════════════════════════════════════════════════════
@@ -19,20 +21,34 @@ SPARK=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)
 NVSMI=$(command -v nvidia-smi || { [[ -x /usr/lib/wsl/lib/nvidia-smi ]] && echo /usr/lib/wsl/lib/nvidia-smi; })
 LINUX=0; [[ -r /proc/stat ]] && LINUX=1
 IS_WSL=0; [[ -n $WSL_DISTRO_NAME || -e /proc/sys/fs/binfmt_misc/WSLInterop ]] && IS_WSL=1
-if (( LINUX )); then
-  IFACE=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}')
-  IFACE=${IFACE:-eth0} CORES=$(nproc)
-else
-  IFACE=$(route -n get 1.1.1.1 2>/dev/null | awk '/interface:/ {print $2}')
-  IFACE=${IFACE:-en0} CORES=$(sysctl -n hw.ncpu)
-fi
-
-# 2254857830 → 2.1G · 4294967296 → 4.0G · 512 → 512
-human() {
-  awk -v n="$1" 'BEGIN { split("B K M G T P", u); i = 1
-    while (n >= 1024 && i < 6) { n /= 1024; i++ }
-    print (i == 1) ? sprintf("%d", n) : sprintf("%.1f%s", n, u[i]) }'
+if (( LINUX )); then CORES=$(nproc); else CORES=$(sysctl -n hw.ncpu); fi
+# the interface that reaches the internet (it changes with Wi-Fi, a VPN…)
+iface() {
+  local i
+  if (( LINUX )); then
+    i=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}')
+    echo "${i:-eth0}"
+  else
+    i=$(route -n get 1.1.1.1 2>/dev/null | awk '/interface:/ {print $2}')
+    echo "${i:-en0}"
+  fi
 }
+IFACE=$(iface)
+HOST=${HOSTNAME:-$(hostname)}; HOST=${HOST%%.*}
+
+# Every round runs in this shell: the helpers below leave their answer in $REPLY instead of
+# printing it into a $(…), which would fork a subshell (some twenty per round otherwise).
+# human <bytes> → 2254857830: 2.1G · 4294967296: 4.0G · 512: 512 (integer maths, no awk)
+UNITS=(B K M G T P)
+human() {
+  local n=$1 i=0 t
+  if (( n < 1024 )); then REPLY=$n; return; fi
+  while (( n >= 1048576 && i < 4 )); do n=$(( n / 1024 )); i=$(( i + 1 )); done
+  t=$(( (n * 10 + 512) / 1024 ))                       # tenths of the next unit, rounded
+  printf -v REPLY '%d.%d%s' $(( t / 10 )) $(( t % 10 )) "${UNITS[i + 1]}"
+}
+# used_of <used bytes> <total bytes> → "2.1G / 8.0G"
+used_of() { local u; human "$1"; u=$REPLY; human "$2"; REPLY="$u / $REPLY"; }
 
 # ─── readings: Linux (/proc) or macOS ───
 # CPU % since the previous call (macOS: what ps reports, per core like Activity Monitor)
@@ -74,21 +90,29 @@ uptime_read() {
 }
 # rx tx: bytes received / sent by $IFACE so far
 net_read() {
+  rx= tx=
   if (( LINUX )); then
-    read -r rx tx < <(awk -v i="$IFACE:" '$1 == i { print $2, $10 }' /proc/net/dev)
+    local name r t
+    while read -r name r _ _ _ _ _ _ _ t _; do
+      [[ $name == "$IFACE:" ]] && { rx=$r tx=$t; break; }
+    done < /proc/net/dev
   else                         # the <Link#> row; counted from the end (Address may be empty)
     read -r rx tx < <(netstat -ibn | awk -v i="$IFACE" '$1 == i && $3 ~ /^<Link/ { print $(NF-4), $(NF-1); exit }')
   fi
   rx=${rx:-0} tx=${tx:-0}
 }
-now_ns() { if (( LINUX )); then date +%s%N; else perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1e9'; fi; }
+now_ms() {
+  if [[ -n $EPOCHREALTIME ]]; then REPLY=${EPOCHREALTIME/[.,]/}; REPLY=$(( REPLY / 1000 ))   # bash ≥ 5: no process
+  elif (( LINUX )); then REPLY=$(( $(date +%s%N) / 1000000 ))
+  else REPLY=$(perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000'); fi
+}
 # "size used mountpoint" lines, in bytes: the system disk (and Windows' C: in WSL)
 disks() {
   if (( LINUX )); then df -kP / /mnt/c 2>/dev/null; else df -kP /System/Volumes/Data 2>/dev/null; fi |
     awk 'NR > 1 { print $2 * 1024, $3 * 1024, $NF }'
 }
 disk_label() {
-  case $1 in /mnt/c) echo "C:" ;; /) (( IS_WSL )) && echo "WSL" || echo "Disk" ;; *) echo "Disk" ;; esac
+  case $1 in /mnt/c) REPLY="C:" ;; /) (( IS_WSL )) && REPLY="WSL" || REPLY="Disk" ;; *) REPLY="Disk" ;; esac
 }
 my_ip() {
   if (( LINUX )); then ip -o -4 addr show "$IFACE" 2>/dev/null | awk '{print $4; exit}'
@@ -103,7 +127,7 @@ bar() {
   col=$C_OK; (( p >= 70 )) && col=$C_WARN; (( p >= 90 )) && col=$C_BAD
   for (( n = 0; n < fill; n++ )); do full+="█"; done
   for (( n = fill; n < w; n++ )); do empty+="░"; done
-  printf '%s%s%s%s%s' "$col" "$full" "$C_TRACK" "$empty" "$X"
+  REPLY="$col$full$C_TRACK$empty$X"
 }
 
 # line <label> <percent> <text>  → one more entry in $out; the bar takes what the text
@@ -111,8 +135,10 @@ bar() {
 line() {
   local text=$3
   (( cols - 16 - ${#text} < 6 )) && text=""          # no room for "used / total": bar and % only
-  local w=$(( cols - 16 - ${#text} )); (( w > 60 )) && w=60; (( w < 6 )) && w=6
-  out+=("$(printf ' %s%-6s%s ' "$C_TEXT" "$1" "$X"; bar "$2" "$w"; printf ' %s%3d%%%s %s%s%s' "$C_TEXT" "$2" "$X" "$C_DIM" "$text" "$X")")
+  local w=$(( cols - 16 - ${#text} )) l; (( w > 60 )) && w=60; (( w < 6 )) && w=6
+  bar "$2" "$w"
+  printf -v l ' %s%-6s%s %s %s%3d%%%s %s%s%s' "$C_TEXT" "$1" "$X" "$REPLY" "$C_TEXT" "$2" "$X" "$C_DIM" "$text" "$X"
+  out+=("$l")
 }
 
 # spark <width> <values…> → the last <width> values as ▁▂▃…█ scaled to their maximum
@@ -122,85 +148,108 @@ spark() {
   (( n > w )) && v=("${v[@]:$(( n - w ))}")
   for i in "${v[@]}"; do (( i > max )) && max=$i; done
   for i in "${v[@]}"; do s+=${SPARK[ i * 7 / max ]}; done
-  printf '%s' "$s"
+  REPLY=$s
 }
 
 # top-right "󰊓 zoom" / "󰊔 restore": tmux turns a click there into resize-pane -Z (~/.tmux.conf)
 zoom_button() {
-  local z; z=$(tmux display -p -t "${TMUX_PANE:-}" '#{window_zoomed_flag}' 2>/dev/null)
-  if [[ $z == 1 ]]; then printf '\e[1;%dH\e[48;2;137;180;250m\e[38;2;17;17;27m\e[1m 󰊔 restore \e[0m' $(( cols - 10 ))
+  if [[ $zoomed == 1 ]]; then printf '\e[1;%dH\e[48;2;137;180;250m\e[38;2;17;17;27m\e[1m 󰊔 restore \e[0m' $(( cols - 10 ))
   else printf '\e[1;%dH\e[48;2;49;50;68m\e[38;2;166;173;200m 󰊓 zoom \e[0m' $(( cols - 7 ))
   fi
 }
 
-rate() { local r; r=$(human "$1"); [[ $r == *[0-9] ]] && r+="B"; printf '%s/s' "${r:-0B}"; }
+rate() { human "$1"; [[ $REPLY == *[0-9] ]] && REPLY+="B"; REPLY="${REPLY:-0B}/s"; }
 
 cpu_sample
 net_read; prev_rx=$rx prev_tx=$tx
-prev_t=$(now_ns)
+now_ms; prev_t=$REPLY
 down=() upl=()
 # cursor hidden, and no autowrap: a line too long for the pane is cut instead of
 # wrapping onto the next row (which would push the header out of the pane)
-printf '\e[?25l\e[?7l'; trap 'printf "\e[?25h\e[?7h"; exit' INT TERM EXIT
+printf '\e[?25l\e[?7l'; trap 'printf "\e[?25h\e[?7h"; [[ -n $TMUX_PANE ]] && tmux set -pu -t "$TMUX_PANE" @wake 2>/dev/null; exit' INT TERM EXIT
 trap ':' WINCH                 # a resize (zoom / restore) redraws right away
-first=1
+trap ':' USR1                  # back in sight (tmux.conf hooks): look again right away
+[[ -n $TMUX_PANE ]] && tmux set -p -t "$TMUX_PANE" @wake $$
+# size, zoom and sight in one tmux call · in sight: someone is attached, this is the current
+# tab and no other pane of it is zoomed
+VIEW='#{pane_width} #{pane_height} #{window_zoomed_flag} #{&&:#{&&:#{window_active},#{session_attached}},#{||:#{?window_zoomed_flag,0,1},#{pane_active}}}'
+first=1 round=0
 while :; do
-  cols=$(tput cols 2>/dev/null || echo 60); rows=$(tput lines 2>/dev/null || echo 9); out=()
+  cols= rows= zoomed=0 visible=1
+  [[ -n $TMUX_PANE ]] && read -r cols rows zoomed visible < <(tmux display -p -t "$TMUX_PANE" "$VIEW" 2>/dev/null)
+  if [[ $visible == 0 ]]; then
+    sleep 10 & wait $!; kill $! 2>/dev/null     # out of sight: a look every 10 s, or SIGUSR1
+    continue
+  fi
+  [[ -z $cols ]] && { cols=$(tput cols 2>/dev/null || echo 60); rows=$(tput lines 2>/dev/null || echo 9); }
+  out=()
+  # what rarely changes, every 30 s: the interface (Wi-Fi, VPN…), its IP, the disks
+  if (( round % 15 == 0 )); then
+    now_if=$(iface)
+    if [[ $now_if != "$IFACE" ]]; then IFACE=$now_if; net_read; prev_rx=$rx prev_tx=$tx; fi
+    ip=$(my_ip); disk_lines=$(disks)
+  fi
+  round=$(( round + 1 ))
   # CPU, memory, uptime, load
   cpu_sample
   mem_read
   uptime_read
   # network speed since the last round
   net_read
-  now=$(now_ns); ms=$(( (now - prev_t) / 1000000 )); (( ms < 1 )) && ms=1
+  now_ms; now=$REPLY; ms=$(( now - prev_t )); (( ms < 1 )) && ms=1
   drate=$(( (rx - prev_rx) * 1000 / ms )) urate=$(( (tx - prev_tx) * 1000 / ms ))
   (( drate < 0 )) && drate=0; (( urate < 0 )) && urate=0
   prev_rx=$rx prev_tx=$tx prev_t=$now
   down+=("$drate"); upl+=("$urate"); (( ${#down[@]} > 120 )) && down=("${down[@]:1}") upl=("${upl[@]:1}")
 
   if (( cols >= 75 )); then       # leave room for the zoom button on the right
-    out+=("$(printf ' %s%s󰍛 %s%s  %sup %dd %dh %dm · load %s %s %s · %d CPU%s' "$B" "$C_HEAD" "$(hostname)" "$X" \
-      "$C_DIM" $((up/86400)) $((up%86400/3600)) $((up%3600/60)) "$l1" "$l5" "$l15" "$CORES" "$X")")
+    printf -v head ' %s%s󰍛 %s%s  %sup %dd %dh %dm · load %s %s %s · %d CPU%s' "$B" "$C_HEAD" "$HOST" "$X" \
+      "$C_DIM" $((up/86400)) $((up%86400/3600)) $((up%3600/60)) "$l1" "$l5" "$l15" "$CORES" "$X"
   elif (( cols >= 50 )); then
-    out+=("$(printf ' %s%s󰍛 %s%s  %sup %dd %dh · load %s%s' "$B" "$C_HEAD" "$(hostname)" "$X" \
-      "$C_DIM" $((up/86400)) $((up%86400/3600)) "$l1" "$X")")
+    printf -v head ' %s%s󰍛 %s%s  %sup %dd %dh · load %s%s' "$B" "$C_HEAD" "$HOST" "$X" \
+      "$C_DIM" $((up/86400)) $((up%86400/3600)) "$l1" "$X"
   else                            # narrow: the host only (the zoom button needs the rest)
-    out+=("$(printf ' %s%s󰍛 %s%s' "$B" "$C_HEAD" "$(hostname)" "$X")")
+    printf -v head ' %s%s󰍛 %s%s' "$B" "$C_HEAD" "$HOST" "$X"
   fi
+  out+=("$head")
   (( first )) && cpu=0
   line "CPU" "$cpu" ""
-  line "RAM" $(( (mt - ma) * 100 / mt )) "$(human $(( (mt - ma) * 1024 ))) / $(human $((mt*1024)))"
-  if (( st > 0 )); then line "Swap" $(( (st - sf) * 100 / st )) "$(human $(( (st - sf) * 1024 ))) / $(human $((st*1024)))"; fi
+  used_of $(( (mt - ma) * 1024 )) $(( mt * 1024 )); line "RAM" $(( (mt - ma) * 100 / mt )) "$REPLY"
+  if (( st > 0 )); then used_of $(( (st - sf) * 1024 )) $(( st * 1024 )); line "Swap" $(( (st - sf) * 100 / st )) "$REPLY"; fi
   if [[ -n $NVSMI ]] && IFS=', ' read -r gu gm gt gtemp gpow < <("$NVSMI" --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null | head -1) && [[ $gu =~ ^[0-9]+$ ]]; then
-    gpu_txt="$(human $(( gm * 1048576 ))) / $(human $(( gt * 1048576 )))"
+    used_of $(( gm * 1048576 )) $(( gt * 1048576 )); gpu_txt=$REPLY
     (( cols >= 50 )) && gpu_txt+=" · ${gtemp%.*}°C"
     (( cols >= 60 )) && gpu_txt+=" · ${gpow%.*}W"
     line "GPU" "$gu" "$gpu_txt"
   fi
   while read -r size used mnt; do
     [[ -z $size || $size == 0 ]] && continue
-    label=$(disk_label "$mnt")
-    line "$label" $(( used * 100 / size )) "$(human $used) / $(human $size)"
-  done < <(disks)
+    disk_label "$mnt"; label=$REPLY
+    used_of "$used" "$size"; line "$label" $(( used * 100 / size )) "$REPLY"
+  done <<< "$disk_lines"
   # Net: ↓ speed + history · ↑ speed + history (history width fits the pane)
   sw=$(( (cols - 36) / 2 )); (( sw < 4 )) && sw=4; (( sw > 40 )) && sw=40
-  out+=("$(printf ' %s%-6s%s %s↓ %-9s%s%s  %s↑ %-9s%s%s' "$C_TEXT" "Net" "$X" \
-    "$C_DOWN" "$(rate "$drate")" "$(spark "$sw" "${down[@]}")" "$X" "$C_UP" "$(rate "$urate")" "$(spark "$sw" "${upl[@]}")" "$X")")
+  rate "$drate"; dtxt=$REPLY; spark "$sw" "${down[@]}"; dspark=$REPLY
+  rate "$urate"; utxt=$REPLY; spark "$sw" "${upl[@]}"; uspark=$REPLY
+  printf -v net ' %s%-6s%s %s↓ %-9s%s%s  %s↑ %-9s%s%s' "$C_TEXT" "Net" "$X" \
+    "$C_DOWN" "$dtxt" "$dspark" "$X" "$C_UP" "$utxt" "$uspark" "$X"
+  out+=("$net")
   # Web: are we online, and how far is the internet
-  ip=$(my_ip)
-  if ping_out=$(ping_once) && lat=$(grep -o 'time=[0-9.]*' <<< "$ping_out" | cut -d= -f2); then
-    lc=$C_OK; (( ${lat%.*} >= 100 )) && lc=$C_WARN; (( ${lat%.*} >= 300 )) && lc=$C_BAD
+  if ping_out=$(ping_once) && [[ $ping_out =~ time[=\<]([0-9]+) ]]; then
+    lat=${BASH_REMATCH[1]}
+    lc=$C_OK; (( lat >= 100 )) && lc=$C_WARN; (( lat >= 300 )) && lc=$C_BAD
     # as much as fits: a wrapped line would push the header out of the pane
     if   (( cols >= 70 )); then tail_txt=" to 1.1.1.1 · $IFACE $ip"
     elif (( cols >= 50 )); then tail_txt=" to 1.1.1.1"
     else                        tail_txt=""
     fi
-    web="$(printf '%s● online%s %s· %s%s ms%s %s%s' "$C_OK" "$X" "$C_DIM" "$lc" "${lat%.*}" "$X" "$C_DIM" "$tail_txt")"
+    printf -v web '%s● online%s %s· %s%s ms%s %s%s' "$C_OK" "$X" "$C_DIM" "$lc" "$lat" "$X" "$C_DIM" "$tail_txt"
   else
     if (( cols >= 70 )); then tail_txt=" · no answer from 1.1.1.1 · $IFACE ${ip:-no IP}"; else tail_txt=" · no answer"; fi
-    web="$(printf '%s● offline%s %s%s' "$C_BAD" "$X" "$C_DIM" "$tail_txt")"
+    printf -v web '%s● offline%s %s%s' "$C_BAD" "$X" "$C_DIM" "$tail_txt"
   fi
-  out+=("$(printf ' %s%-6s%s %s%s' "$C_TEXT" "Web" "$X" "$web" "$X")")
+  printf -v web ' %s%-6s%s %s%s' "$C_TEXT" "Web" "$X" "$web" "$X"
+  out+=("$web")
 
   # never more lines than the pane has (a trailing newline would scroll the header away)
   printf '\e[H'

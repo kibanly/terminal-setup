@@ -33,16 +33,18 @@ class PkgInfo(Viewer):
     tabs = ["Info", "Files", "Depends"]
     interval = 0.3
     empty = "highlight a package in Packages, Search or Updates"
+    watch = ("@pkgs-changed",)
 
     def __init__(self, screen):
         self.cache = {}
         super().__init__(screen)
 
     def tick(self):
-        if pkgs_changed(self):           # something was installed / removed: show it as it is now
+        super().tick()
+        # something was installed / removed: show it as it is now
+        if self.visible and pkgs_changed(self, self.opts.get("@pkgs-changed")):
             self.cache.clear()
             self.reload()
-        super().tick()
 
     def load(self, key, tab, width):
         src_name, name = split_id(key)

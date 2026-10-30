@@ -27,12 +27,16 @@ apt_get() {
 apt_candidate() { apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/ {print $2}' | sed 's/(none)//; s/^[0-9]*://'; }
 apt_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q " installed$"; }
 
-# the package lists must be there to know what Ubuntu offers (empty on a fresh system)
+# The plan needs the package lists to know what Ubuntu offers: only a fresh system has none,
+# and only then they are fetched before you said yes. Lists older than a day are refreshed
+# after it, before installing. (pkgcache.bin is rebuilt on every update; the lists keep the
+# server's dates, not the download's)
+apt_has_lists()     { [ -n "$(find /var/lib/apt/lists -maxdepth 1 -name '*_Packages' 2>/dev/null | head -1)" ]; }
+apt_lists_recent()  { [ -n "$(find /var/cache/apt/pkgcache.bin -mmin -1440 2>/dev/null)" ]; }
 apt_refresh_lists() {
-  if [ -z "$(find /var/lib/apt/lists -maxdepth 1 -name '*_Packages' -mtime -1 2>/dev/null | head -1)" ]; then
-    info "refreshing the package lists (apt-get update)…"
-    apt_get update
-  fi
+  apt_has_lists && return
+  info "no package lists yet: fetching them first to plan (apt-get update, asks for your password)…"
+  apt_get update
 }
 
 apt_plan() {
@@ -42,7 +46,7 @@ apt_plan() {
   { [ "$HAS_DESKTOP" = 1 ] || [ "$IS_WSL" = 1 ]; } && list="$list $APT_DESKTOP"
   for p in $list; do apt_installed "$p" || APT_MISSING="$APT_MISSING $p"; done
   # tmux: Ubuntu's when it is new enough, else built from source
-  if ! { have tmux && version_ge "$(tmux -V | awk '{print $2}')" "$TMUX_MIN"; }; then
+  if ! { have tmux && version_ge "$(tmux -V)" "$TMUX_MIN"; }; then
     if version_ge "$(apt_candidate tmux)" "$TMUX_MIN"; then APT_MISSING="$APT_MISSING tmux"; else NEED_TMUX_BUILD=1; fi
   fi
   if ! { have fzf && version_ge "$(fzf --version | awk '{print $1}')" "$FZF_MIN"; }; then
@@ -68,6 +72,10 @@ apt_show_plan() {
 apt_install() {
   export DEBIAN_FRONTEND=noninteractive
   step "Ubuntu packages"
+  if [ -n "$APT_MISSING" ] && ! apt_lists_recent; then
+    info "refreshing the package lists (apt-get update)…"
+    apt_get update
+  fi
   case "$APT_MISSING$NEED_TMUX_BUILD$NEED_FZF$NEED_FASTFETCH$NEED_STARSHIP" in
     0000) ok "nothing to install: every package is there" ;;
   esac
@@ -100,7 +108,9 @@ apt_install() {
   fi
   if [ "$NEED_STARSHIP" = 1 ]; then
     run mkdir -p ~/.local/bin
-    run sh -c "curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b \"$HOME/.local/bin\" >/dev/null"
+    # downloaded first: piped into sh, a failed download would look like a good install
+    run curl -fsSL -o "$tmp/starship-install.sh" https://starship.rs/install.sh
+    run sh -c "sh '$tmp/starship-install.sh' -y -b '$HOME/.local/bin' >/dev/null"
     ok "starship in ~/.local/bin"
   fi
   rm -rf "$tmp"

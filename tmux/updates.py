@@ -64,10 +64,9 @@ class Updates(SourcesPane, TableApp):
                              "order": (not u["security"], u["name"])})
         return rows
 
-    def dispatch(self, ev):
-        if ev[0] == "tick" and self.changed():
+    def on_tick(self):
+        if self.changed():
             self.reload()
-        super().dispatch(ev)
 
     def summary(self):
         apt = pkgsrc.source("apt")

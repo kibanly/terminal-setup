@@ -34,7 +34,7 @@ Funciona en **Ubuntu 26.04**, **Ubuntu 24.04**, **WSL** (Ubuntu dentro de Window
 
   | Comando | Qué hace |
   |---|---|
-  | `update` | actualiza todo: apt, snap, Homebrew, los plugins de zsh y de tmux |
+  | `update` | actualiza todo: apt, snap, Homebrew, los plugins de zsh y de tmux (estos, con tmux abierto) |
   | `clean` | limpia cachés y restos de apt, snap, Homebrew, journal y Docker |
   | `installed-packages` | los paquetes que instalaste **tú** (apt, snap, brew) y por qué (notas) |
   | `ports` / `killport <puerto>` | qué escucha en cada puerto / liberarlo (pregunta antes) |
@@ -58,6 +58,8 @@ Funciona en **Ubuntu 26.04**, **Ubuntu 24.04**, **WSL** (Ubuntu dentro de Window
 | 2 · monitor | procesos y puertos: ordenar, filtrar, parar (pregunta antes), saltar de uno a otro |
 | 3 · packages | tus paquetes (apt, snap, brew) con notas, actualizaciones, buscador e información de cada uno |
 | 4 · docker | contenedores, detalle (Dockerfile, compose, configuración final), logs en vivo con buscador |
+
+Solo trabaja lo que estás viendo: las pestañas ocultas (y todo el monitor cuando no está a la vista o nadie está conectado) no leen nada ni gastan CPU, y se ponen al día en cuanto aparecen.
 
 Cada panel tiene su botón de **zoom**, su menú (clic derecho o `Enter`) y se adapta a cualquier tamaño de ventana. En las listas: escribe para filtrar (`Esc` o clic en **✕** lo borra), `↑↓` para moverte, `← →` o clic en un título para ordenar (`Ctrl+r` invierte), `Tab` para cambiar de fuente (all · apt · snap · brew). En los paneles de detalle y logs, `Tab` o `← →` cambian de pestaña.
 
@@ -209,7 +211,7 @@ Abre una terminal nueva: tmux arranca solo y te lleva al **monitor del sistema**
 | una sesión nueva para un proyecto | `Ctrl+a s`, escribe el nombre, Enter, elige la carpeta |
 | pestaña nueva / dividir | `Ctrl+a c` · `Ctrl+a v` (al lado) · `Ctrl+a -` (debajo) |
 | volver al monitor | `Ctrl+a M` (o clic en CPU / RAM de la barra) |
-| una terminal sin tmux | `Ctrl+a d`: sales de tmux al shell normal y tmux sigue funcionando (vuelves con `terminal`). Para que no arranque nunca: `export TERMINAL_NO_AUTOSTART=1` en tu `~/.zshrc`, **antes** de la línea de terminal-setup |
+| una terminal sin tmux | `Ctrl+a d`: sales de tmux al shell normal y tmux sigue funcionando (vuelves con `terminal`). Para que no arranque nunca: `export TERMINAL_NO_AUTOSTART=1` en tu `~/.zshrc` |
 
 > **`Ctrl+a`** es el prefijo de tmux: pulsa `Ctrl+a`, suelta, y luego la tecla. Mientras está activo, la barra se pone roja y muestra «press a key».
 
@@ -221,8 +223,8 @@ Hay dos sitios, según para quién sea el cambio:
 
 - **Para todas tus máquinas**: edita los ficheros **del repo** (tabla de abajo), haz `git commit` y llévalo a las demás con `git pull`.
 - **Solo para esta máquina** (alias propios, rutas, nvm, pyenv…): en **tu `~/.zshrc`**, como siempre.
-  - Lo que pongas **antes** de la línea de terminal-setup se carga primero; por ejemplo, `export TERMINAL_NO_AUTOSTART=1` para que tmux no arranque solo.
-  - Lo que pongas **después** se carga al final y **gana** sobre el repo (por ejemplo, para redefinir un alias).
+  - Lo que pongas **antes** de la línea de terminal-setup se carga primero.
+  - Lo que pongas **después** se carga al final y **gana** sobre el repo (por ejemplo, para redefinir un alias). tmux arranca cuando ya se ha cargado todo tu `~/.zshrc`, así que también ve lo de después (un `export DOCKER_HOST=…`, el `PATH`…).
   - En `~/.tmux.conf` funciona igual: lo que va después de la línea de terminal-setup gana.
 
 Para aplicar los cambios:

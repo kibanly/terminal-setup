@@ -6,5 +6,6 @@
 
 source "${0:A:h}/linux.zsh"       # open (→ Windows Explorer / browser here), clipboard, ssh-agent
 
-# a terminal opened from Windows may start in /mnt/c/…: home is nicer (and much faster)
-[[ $PWD == /mnt/c/* ]] && cd ~
+# a terminal opened from Windows may start in /mnt/c/…: home is nicer (and much faster).
+# Only that first shell: a pane or shell you open in a /mnt/c folder stays there.
+[[ -z $TMUX && $SHLVL == 1 && $PWD == /mnt/c/* ]] && cd ~

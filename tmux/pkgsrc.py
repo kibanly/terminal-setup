@@ -102,9 +102,13 @@ def read_notes():
 
 
 def write_notes(notes):
-    with open(NOTES, "w", encoding="utf-8") as f:
+    """Written to a new file that then takes the old one's place: a crash or a full disk
+    halfway through cannot leave ~/.apt-notes.tsv empty."""
+    tmp = f"{NOTES}.tmp{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
         for pkg in sorted(notes):
             f.write(f"{pkg}\t{notes[pkg]}\n")
+    os.replace(tmp, NOTES)
 
 
 def split_id(pkg_id):
@@ -207,6 +211,8 @@ class Apt:
         return os.path.getmtime(stamp) if stamp else None
 
     def search(self, words):
+        # apt-cache takes regular expressions: what you type is meant literally (c++, [)
+        words = [re.sub(r"([.^$*+?()[\]{}|\\])", r"\\\1", w) for w in words]
         found = []
         for line in run_text("apt-cache", "search", "--", *words).splitlines():
             name, _, desc = line.partition(" - ")
@@ -654,10 +660,9 @@ def pkg_popup(app, title, command):
     app.popup(title, f"{command}; tmux set -g @pkgs-changed \"$(date +%s%N)\"; printf '\\npress Enter'; read", h="60%")
 
 
-def pkgs_changed(app):
-    """True once after a package command changed something (every package pane sees it)."""
-    from tmuxlink import get
-    stamp = get("@pkgs-changed")
+def pkgs_changed(app, stamp):
+    """True once after a package command changed something (every package pane sees it).
+    stamp: the value of @pkgs-changed, which the panes read on every tick (their `watch`)."""
     if stamp != getattr(app, "_pkgs_seen", None):
         first = not hasattr(app, "_pkgs_seen")
         app._pkgs_seen = stamp
@@ -670,6 +675,7 @@ class SourcesPane:
     the title row (all · apt · snap · brew, when there is more than one source), slow
     sources answered in the background, and a re-read after any package command."""
     src_filter = "all"
+    watch = ("@pkgs-changed",)
 
     def start_sources(self):
         self.bg = Background(self.wake)
@@ -697,7 +703,7 @@ class SourcesPane:
 
     def changed(self):
         """After a package command: forget cached answers so everything is asked again."""
-        if pkgs_changed(self):
+        if pkgs_changed(self, self.opts.get("@pkgs-changed")):
             self.bg.forget()
             return True
         return False

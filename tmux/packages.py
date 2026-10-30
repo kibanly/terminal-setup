@@ -96,10 +96,9 @@ class Packages(SourcesPane, TableApp):
         if r:
             tmuxlink.put("@pkg-selected", r["id"])
 
-    def dispatch(self, ev):
-        if ev[0] == "tick" and self.changed():     # a package command ran in a popup: re-read
+    def on_tick(self):
+        if self.changed():                         # a package command ran in a popup: re-read
             self.reload()
-        super().dispatch(ev)
 
     def edit_note(self, r):
         key = note_key(r["src"], r["name"])

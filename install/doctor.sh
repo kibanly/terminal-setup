@@ -80,6 +80,7 @@ case $FONT_TODO in
   remote)  info "${D}– no desktop here: the font belongs on the computer you connect from${R}" ;;
   windows) fail "JetBrainsMono Nerd Font is not installed in Windows (see windows/windows-terminal.md)"; problems=$((problems + 1)) ;;
   linux)   fail "JetBrainsMono Nerd Font is not installed (run ./install.sh)"; problems=$((problems + 1)) ;;
+  macos)   fail "JetBrainsMono Nerd Font is not installed (run ./install.sh: the Brewfile has it)"; problems=$((problems + 1)) ;;
 esac
 info "${D}icons look right only if your terminal uses it: \"JetBrainsMono Nerd Font\"${R}"
 

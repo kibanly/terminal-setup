@@ -22,7 +22,7 @@ BACKUP_DIR="$HOME/.terminal-setup-backup/$(date +%Y%m%d-%H%M%S)"
 printf '\n%sterminal-setup · uninstall%s\n' "$B" "$R"
 step "Plan"
 blocks="" copies="" links=$(links_into_repo)
-for f in .zshrc .tmux.conf; do has_block "$HOME/$f" && blocks="$blocks $f"; done
+for f in .zshrc .tmux.conf; do has_block "$HOME/$f" && { check_marks "$HOME/$f"; blocks="$blocks $f"; }; done
 while read -r src dst; do
   [ -n "$src" ] && [ ! -L "$HOME/$dst" ] && cmp -s "$REPO/$src" "$HOME/$dst" && copies="$copies $dst"
 done <<< "$COPIES"
@@ -58,7 +58,7 @@ if [ -n "$links" ]; then
     fi
     ok "removed the link ~/$f"
   done
-  old=$(ls -d "$HOME"/.terminal-setup-backup/*/ 2>/dev/null | sort | tail -1); old=${old%/}
+  old=$(ls -d "$HOME"/.terminal-setup-backup/*/ 2>/dev/null | sort | tail -1 || true); old=${old%/}
   if [ -n "$old" ] && [ -f "$old/MANIFEST" ]; then
     while read -r rel; do
       [ -e "$old/$rel" ] || [ -L "$old/$rel" ] || continue

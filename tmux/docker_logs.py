@@ -34,12 +34,13 @@ import time
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import tmuxlink
 from logfmt import mark, parse
 from tui import ANSI, DIM, GREEN, RESET, TEXT, YELLOW, wrap
 from viewer import Viewer, run
 
-NOT_SGR = re.compile(r"\x1b\[[0-9;?]*[A-Za-ln-z]|\x1b[()][A-Z0-9]|\x1b[=>]|\r|\x07")
+# everything but colours: cursor moves, OSC strings, charset switches, control characters
+NOT_SGR = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-ln-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]"
+                     r"|[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f]")
 TAIL = 400            # lines shown when nothing filters
 SHOW_MAX = 2000       # most matches laid out (the newest; the count covers them all)
 FULL_MAX = 300000     # most lines read from a long log
@@ -54,13 +55,17 @@ SLEEP_AFTER = 5       # seconds out of sight before the live `docker logs -f` is
 STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z) ?")   # docker logs --timestamps
 
 
+try:                                    # looked up here: the child (after fork) only calls it
+    _PRCTL = ctypes.CDLL(None, use_errno=True).prctl
+except (OSError, AttributeError):       # macOS: no prctl
+    _PRCTL = None
+
+
 def die_with_parent():
     """Runs in the child before exec: the kernel ends `docker logs -f` when this pane's program
     goes, however it goes (pane closed, tab rebuilt, killed) · no orphans following logs forever."""
-    try:
-        ctypes.CDLL(None, use_errno=True).prctl(1, 15)          # PR_SET_PDEATHSIG, SIGTERM
-    except (OSError, AttributeError):
-        pass
+    if _PRCTL:
+        _PRCTL(1, 15)                                            # PR_SET_PDEATHSIG, SIGTERM
 
 
 def stamp_key(ts):
@@ -108,7 +113,7 @@ class Logs(Viewer):
         stamp). Lines come from `docker logs --timestamps`: that stamp is cut off and shown in local time."""
         m = STAMP.match(raw)
         stamp = m[1] if m else None
-        line = NOT_SGR.sub("", raw[m.end():] if m else raw)
+        line = NOT_SGR.sub("", raw[m.end():] if m else raw).expandtabs(4)     # tabs: Go's zap logs
         lvl, pretty = parse(line, stamp)
         plain = ANSI.sub("", line)
         return (lvl, pretty, plain.lower(), plain, stamp)
@@ -161,9 +166,12 @@ class Logs(Viewer):
         elif self.key and self.proc and self.proc.poll() is not None and now - self.checked_at > 2:
             # the container stopped (restart, crash): go on once it runs again
             self.checked_at = now
-            res = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", self.key],
-                                 capture_output=True, text=True)
-            if res.stdout.strip() == "true":
+            try:                                         # a stuck daemon must not freeze the pane
+                running = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", self.key],
+                                         capture_output=True, text=True, timeout=5).stdout.strip() == "true"
+            except (subprocess.TimeoutExpired, OSError):
+                running = False
+            if running:
                 with self.lock:
                     self.tail.append((None, STARTED, "", "", None))
                     self.dirty = True
@@ -184,6 +192,8 @@ class Logs(Viewer):
                     self.last_stamp = e[4]
                 self.tail.append(e)
                 if self.full is not None and (not e[4] or stamp_key(e[4]) > self.full_upto):
+                    if len(self.full) == FULL_MAX:       # kept at FULL_MAX lines: the oldest goes
+                        self.counts[self.full[0][0]] -= 1
                     self.full.append(e)                  # a new line after the whole log was read
                     self.counts[e[0]] += 1
                 self.dirty = True
@@ -205,7 +215,6 @@ class Logs(Viewer):
             lines = (out.stdout + out.stderr).decode("utf-8", "replace").splitlines()
             # stdout and stderr come one after the other: docker's stamps put them back in order
             entries = sorted((self.entry(l) for l in lines), key=lambda e: stamp_key(e[4]) if e[4] else "")
-            counts = collections.Counter(e[0] for e in entries)
             with self.lock:
                 if gen == self.gen and gen_full == self.gen_full:
                     # lines arriving live from now on are added if newer than the read
@@ -213,9 +222,10 @@ class Logs(Viewer):
                     # and those that arrived live after docker finished reading go in now
                     late = [e for e in self.tail if e[4] and stamp_key(e[4]) > self.full_upto]
                     entries += late
-                    counts.update(e[0] for e in late)
                     if late:
                         self.full_upto = stamp_key(late[-1][4])
+                    entries = collections.deque(entries, maxlen=FULL_MAX)
+                    counts = collections.Counter(e[0] for e in entries)
                     self.full, self.counts, self.loading, self.dirty = entries, counts, False, True
             self.wake()
         threading.Thread(target=work, daemon=True).start()
@@ -275,16 +285,18 @@ class Logs(Viewer):
 
     # ─── viewer hooks ───
     def poll(self, force=False):
-        self.zoomed, visible, key = tmuxlink.pane_view(self.option)
-        if force or key != self.key:
+        key = self.look()
+        if self.visible and (force or key != self.key):      # out of sight: nothing is started
             self.key = key
             self.start(key)
             self.top, self.following, self.sel = 0, True, None
             self.rebuild()
-        self.sight(visible)
+        self.sight(self.visible)
 
     def tick(self):
         self.poll()
+        if not self.visible:
+            return
         if self.dirty or self.pending:
             self.pending = False
             self.rebuild()

@@ -50,7 +50,7 @@ clean() {
 _compose_env_files() {
   if [[ -f .env && -f .env.local ]]; then
     export COMPOSE_ENV_FILES=.env,.env.local
-  else
+  elif [[ $COMPOSE_ENV_FILES == .env,.env.local ]]; then    # only the value set here: yours stays
     unset COMPOSE_ENV_FILES
   fi
 }
@@ -132,12 +132,19 @@ ports() {
 killport() {
   [[ -z "$1" ]] && { echo "Usage: killport <port>"; return 1 }
   local -a pids
-  if (( $+commands[fuser] )); then
+  if [[ $OSTYPE != darwin* ]] && (( $+commands[fuser] )); then
     pids=(${=$(fuser "$1/tcp" 2>/dev/null)})
-  else                                           # macOS
+  else                                           # macOS (its BSD fuser does not take PORT/tcp)
     pids=(${(f)"$(lsof -t -nP -iTCP:$1 -sTCP:LISTEN 2>/dev/null)"})
   fi
-  (( $#pids )) || { echo "Port $1 is not in use"; return 0 }
+  if (( ! $#pids )); then
+    # without sudo, the programs of other users (root: docker-proxy, nginx…) cannot be seen
+    if _listening_tcp | awk -v p="$1" '{ a = $4; sub(/.*:/, "", a); if (a == p) f = 1 } END { exit !f }'; then
+      echo "Port $1 is in use by another user's program (root?): see it with  sudo ss -tlnp 'sport = :$1'"
+      return 1
+    fi
+    echo "Port $1 is not in use"; return 0
+  fi
 
   ps -o pid,user,args -p ${(j:,:)pids}
   echo
@@ -310,7 +317,9 @@ fkill() {
     | awk '{print $1}')"})
   (( $#pids )) || return 0
 
-  kill -s "$sig" $pids && print "✅ Sent SIG$sig to: ${(j:, :)pids}"
+  sig=${${(U)sig}#SIG}                           # -term, -SIGTERM → TERM · -9 stays 9
+  if [[ $sig == <-> ]]; then kill -$sig $pids; else kill -s $sig $pids; fi \
+    && print "✅ Sent ${${sig:#<->}:+SIG}$sig to: ${(j:, :)pids}"
 }
 
 # Packages you installed yourself: apt (minus the base WSL image), snap apps and brew

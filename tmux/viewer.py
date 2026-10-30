@@ -19,13 +19,14 @@ import time
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import tmuxlink
-from tui import (ACCENT, ANSI, BOLD, CRUST, DIM, GREEN, HOVER, RESET, SUB, SURFACE, TEXT, THUMB, TRACK,
+from tui import (ACCENT, ANSI, BOLD, CRUST, DIM, GREEN, HOVER, RESET, SUB, SURFACE, TEXT, THUMB, TRACK, YELLOW,
                  Menu, Screen, bg, cut, ellipsis, vlen, wrap)
 
 ACTIVE_TAB = bg("#89b4fa") + CRUST + BOLD
 SELECTED = bg("#585b70")
 WHEEL_STEP = 3
 TOP = 3            # first content row (1-based): title + tabs, rule, content…
+HIDDEN_CHECK = 10.0  # out of sight: seconds between looks (tmux normally wakes the pane first)
 ICON_ZOOM, ICON_UNZOOM, ICON_COPY, ICON_SELECT = "\U000F0293", "\U000F0294", "\U000F018F", "\U000F0489"
 
 
@@ -77,10 +78,21 @@ class Viewer:
         """Plain text of source line `index` (what gets copied)."""
         return ANSI.sub("", self.sources[index]) if index < len(self.sources) else ""
 
+    # global tmux options read with `option` in the same tmux call (their values: self.opts)
+    watch = ()
+
     # ─── engine ───
+    def look(self):
+        """Zoom, sight and the options this pane follows, in one tmux call · the key to show."""
+        self.zoomed, self.visible, self.opts = tmuxlink.pane_view(self.option, *self.watch)
+        return self.opts[self.option]
+
     def poll(self, force=False):
-        zoomed, key = tmuxlink.pane_state(self.option)
-        self.zoomed = zoomed
+        """Out of sight it does nothing: the key and its contents are read once it is in sight
+        (the system session starts with every tab; tmux wakes the pane, see tmuxlink.note_wake)."""
+        key = self.look()
+        if not self.visible:
+            return
         stale = self.refresh_every and time.monotonic() - self.loaded_at > self.refresh_every
         if force or key != self.key or stale:
             changed = key != self.key
@@ -98,7 +110,11 @@ class Viewer:
 
     def reload(self, reset=False):
         h, w = self.screen.size()
-        self.set_lines(self.load(self.key, self.tabs[self.tab] if self.tabs else None, w) if self.key else [], w)
+        try:
+            sources = self.load(self.key, self.tabs[self.tab] if self.tabs else None, w) if self.key else []
+        except OSError as e:     # an unreadable file (root's 0600 compose file…): say so, don't crash
+            sources = [f"  {YELLOW}cannot read {e.filename or self.key}: {e.strerror}"]
+        self.set_lines(sources, w)
         self.loaded_at = time.monotonic()
         if reset:
             self.top, self.following, self.sel = 0, self.follow_end, None
@@ -324,11 +340,17 @@ def run(viewer_class):
     try:
         with Screen() as screen:
             v = viewer_class(screen)
+            tmuxlink.note_wake()
             v._size = screen.size()
             v.draw()
-            for ev in screen.events(tick=v.interval):
-                if ev[0] == "tick":
+            for ev in screen.events(tick=v.interval if v.visible else HIDDEN_CHECK):
+                if ev[0] in ("mouse", "key", "char") and not v.visible:
+                    v.tick()                                # input means it is in sight after all
+                if ev[0] in ("tick", "wake"):
                     v.tick()
+                    screen.tick = v.interval if v.visible else HIDDEN_CHECK
+                    if not v.visible:
+                        continue
                 elif ev[0] == "mouse":
                     v.on_mouse(*ev[1:])
                 elif v.menu and ev[0] in ("key", "char"):
@@ -351,3 +373,5 @@ def run(viewer_class):
                 v.draw()
     except SystemExit as e:
         sys.exit(0 if e.code is None else e.code)
+    finally:
+        tmuxlink.forget_wake()

@@ -9,6 +9,8 @@
 # ═══════════════════════════════════════════════════════════════
 
 font_present_linux() { fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd Font"; }
+# the Homebrew cask puts the .ttf files in ~/Library/Fonts
+font_present_macos() { ls ~/Library/Fonts /Library/Fonts 2>/dev/null | grep -qi "JetBrainsMonoNerdFont"; }
 
 font_present_windows() {
   local d
@@ -21,7 +23,7 @@ font_present_windows() {
 font_plan() {
   FONT_TODO=none
   case "$OS:$IS_WSL" in
-    macos:*) ;;                                    # Brewfile
+    macos:*) font_present_macos || FONT_TODO=macos ;;           # the Brewfile installs it
     *:1)     font_present_windows || FONT_TODO=windows ;;
     *)       if [ "$HAS_DESKTOP" = 1 ]; then font_present_linux || FONT_TODO=linux; else FONT_TODO=remote; fi ;;
   esac
@@ -32,6 +34,7 @@ font_show_plan() {
     linux)   info "font: JetBrainsMono Nerd Font $NERD_FONT_VERSION → ~/.local/share/fonts" ;;
     windows) info "font: JetBrainsMono Nerd Font is missing in Windows → steps at the end" ;;
     remote)  info "font: no desktop here → install it on the computer you connect from" ;;
+    macos)   info "font: JetBrainsMono Nerd Font → with the Homebrew packages (Brewfile)" ;;
     none)    ok "font: JetBrainsMono Nerd Font is there" ;;
   esac
 }
@@ -45,7 +48,7 @@ font_install() {
     "https://github.com/ryanoasis/nerd-fonts/releases/download/$NERD_FONT_VERSION/$NERD_FONT.zip"
   run mkdir -p ~/.local/share/fonts/JetBrainsMonoNerdFont
   run unzip -oq "$tmp/font.zip" '*.ttf' -d ~/.local/share/fonts/JetBrainsMonoNerdFont
-  run fc-cache -f >/dev/null
+  run fc-cache -f
   rm -rf "$tmp"
   ok "installed · choose \"JetBrainsMono Nerd Font\" in your terminal's settings"
 }

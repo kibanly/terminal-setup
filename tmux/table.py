@@ -14,6 +14,8 @@
 #         · Del asks to stop it · Esc clears the filter · Ctrl+c quits
 #  Rows refresh every few seconds; the highlighted row is followed by its id,
 #  and refreshing pauses while a menu or a question is open.
+#  Out of sight (another tab or session, nobody attached) a pane does nothing: the rows are
+#  first read when it comes into sight, and tmux wakes it then (tmuxlink.note_wake).
 # ═══════════════════════════════════════════════════════════════
 
 import os
@@ -27,11 +29,12 @@ import tmuxlink
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from tui import (ACCENT, BOLD, CLEAR_EOL, CRUST, DANGER_BG, DIM, GREEN, HOVER, RED, RESET, SUB, SURFACE,
-                 TEXT, YELLOW, Menu, Screen, bg, cut, ellipsis, highlight, vlen)
+                 TEXT, YELLOW, Menu, Screen, bg, cut, ellipsis, highlight, pad, vlen)
 
 ACTIVE_ZOOM = bg("#89b4fa") + CRUST + BOLD
 
 WHEEL_STEP = 3
+HIDDEN_CHECK = 10.0  # out of sight: seconds between looks (tmux normally wakes the pane first)
 ICON_ZOOM, ICON_UNZOOM, ICON_COPY, ICON_SELECT = "\U000F0293", "\U000F0294", "\U000F018F", "\U000F0489"
 TOP = 3            # first data row on screen (1-based): title, column titles, rows…, footer
 
@@ -117,6 +120,12 @@ class TableApp:
     # once `reload_every` seconds went by (0: every tick). A short interval with a long
     # reload_every notices other things (a message from another pane) quickly, cheaply.
     reload_every = 0
+    # global tmux options read on every tick, in the same tmux call as the zoom and sight
+    # checks: on_tick() finds their values in self.opts
+    watch = ()
+
+    def on_tick(self):
+        """Every tick while in sight, before the rows are read again (messages from other panes)."""
 
     # ─── engine ───
     def __init__(self, screen):
@@ -142,21 +151,37 @@ class TableApp:
             self.sort_key, self.sort_desc = col.sort, col.desc
         else:
             self.sort_key, self.sort_desc = self.sort_key or self.columns[0].key, False
-        self.reload()
+        # nothing is read until the pane is in sight (the system session starts with every tab)
+        self.zoomed, self.visible, self.opts = tmuxlink.pane_view(*self.watch)
+        self.all, self.loaded, self.reloaded_at = [], False, float("-inf")
+        if self.visible:
+            self.reload()
+        else:
+            self.apply()
 
     @property
     def frozen(self):
         return bool(self.menu or self.ask or self.prompt)
 
+    def tick_every(self):
+        """Seconds between ticks: master tables tick fast to notice a pointer resting on a row."""
+        return (0.12 if self.master else self.interval) if self.visible else HIDDEN_CHECK
+
     def reload(self):
         self.reloaded_at = time.monotonic()
         self.all = self.fetch()
+        self.loaded = True
         self.apply()
 
     def apply(self):
         words = [] if self.remote_query else self.query.lower().split()
-        rows = [r for r in self.all if self.keep(r)
-                and all(w in " ".join(str(v) for k, v in r.items() if k != "id").lower() for w in words)]
+
+        def match(r, w):            # "pid=123" (sent by another pane) is that field exactly
+            key, eq, value = w.partition("=")
+            if eq and key in r and key != "id":
+                return str(r[key]).lower() == value
+            return w in " ".join(str(v) for k, v in r.items() if k != "id").lower()
+        rows = [r for r in self.all if self.keep(r) and all(match(r, w) for w in words)]
         rows.sort(key=lambda r: (r.get(self.sort_key) is None, r.get(self.sort_key)), reverse=self.sort_desc)
         if self.sort_desc:   # keep empty values last when reversing
             rows.sort(key=lambda r: r.get(self.sort_key) is None)
@@ -235,7 +260,7 @@ class TableApp:
             v = row.get(c.key)
             t = "" if v is None else c.fmt(v)
             t = ellipsis(t, self.widths[c.key])
-            out.append(t.rjust(self.widths[c.key]) if c.align == "r" else t.ljust(self.widths[c.key]))
+            out.append(pad(t, self.widths[c.key], right=c.align == "r"))
         return out
 
     # ─── drawing ───
@@ -284,7 +309,7 @@ class TableApp:
         for c in self.visible:
             arrow = (" ▼" if self.sort_desc else " ▲") if c.sort == self.sort_key else ""
             t = ellipsis(c.title + arrow, self.widths[c.key])
-            t = t.rjust(self.widths[c.key]) if c.align == "r" else t.ljust(self.widths[c.key])
+            t = pad(t, self.widths[c.key], right=c.align == "r")
             style = (ACCENT + BOLD) if c.sort == self.sort_key else (TEXT if c.key == self.hover_col else DIM)
             bgc = HOVER if c.key == self.hover_col else ""
             titles += f"{bgc}{style}{t}{RESET} "
@@ -300,9 +325,9 @@ class TableApp:
             r = self.rows[i]
             body = "  " + " ".join(self.cells(r))
             if asking is not None and r["id"] == asking:
-                lines.append(DANGER_BG + CRUST + cut(body, w).ljust(w) + RESET)
-            elif r["id"] in self.busy:
-                tag = f" {self.busy[r['id']]}… "
+                lines.append(DANGER_BG + CRUST + pad(cut(body, w), w) + RESET)
+            elif self.busy.get(r["id"]):                  # (a worker thread may drop it meanwhile)
+                tag = f" {self.busy.get(r['id'], '')}… "
                 lines.append(cut(YELLOW + body, w - len(tag)) + RESET + CLEAR_EOL + f"\x1b[{w - len(tag) + 1}G" + YELLOW + tag)
             else:
                 if self.master and r["id"] == self.sel_id:     # what the detail panes show
@@ -328,7 +353,7 @@ class TableApp:
         if self.msg:
             return " " + self.msg
         r = self.current()
-        return " " + (self.detail(r) if r else f"{DIM}nothing matches")
+        return " " + (self.detail(r) if r else f"{DIM}{'nothing matches' if self.loaded else 'loading…'}")
 
     # ─── helpers for subclasses ───
     def confirm(self, question, action, row):
@@ -348,9 +373,14 @@ class TableApp:
         self.busy[row["id"]] = doing
 
         def work():
-            res = subprocess.run(argv, capture_output=True, text=True)
-            self.busy.pop(row["id"], None)
-            done(res.returncode == 0, (res.stdout + res.stderr).strip())
+            try:
+                res = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+                ok, out = res.returncode == 0, (res.stdout + res.stderr).strip()
+            except (subprocess.TimeoutExpired, OSError) as e:
+                ok, out = False, f"{argv[0]}: {'no answer after 2 min' if isinstance(e, subprocess.TimeoutExpired) else e.strerror}"
+            finally:
+                self.busy.pop(row["id"], None)
+            done(ok, out)
             self.wake()
         threading.Thread(target=work, daemon=True).start()
 
@@ -412,7 +442,7 @@ class TableApp:
         size = self.screen.size()
         same = size == getattr(self, "_last_size", None)
         self._last_size = size
-        if same and not self.frozen:
+        if same and not self.frozen and self.visible:
             self.reload()
         return same
 
@@ -435,8 +465,11 @@ class TableApp:
 
     def dispatch(self, ev):
         kind = ev[0]
-        if kind == "tick":
-            self.zoomed = tmuxlink.pane_state("")[0]
+        if kind in ("tick", "wake"):
+            self.zoomed, self.visible, self.opts = tmuxlink.pane_view(*self.watch)
+            if not self.visible:                         # out of sight: no work at all
+                return
+            self.on_tick()
             if not self.frozen:
                 if time.monotonic() - self.reloaded_at >= self.reload_every:
                     self.reload()
@@ -612,20 +645,27 @@ def run(app_class):
     try:
         with Screen() as screen:
             app = app_class(screen)
+            tmuxlink.note_wake()
             app.draw()
             # master tables tick fast to notice a pointer resting on a row (cheap: no fetch);
             # the real refresh still happens every app.interval seconds
             last = time.monotonic()
-            for ev in screen.events(tick=0.12 if app.master else app.interval):
-                if ev[0] == "tick" and app.master:
-                    if time.monotonic() - last >= app.interval:
-                        last = time.monotonic()
-                        app.dispatch(ev)
-                        app.draw()
-                    elif app.dwell():
+            for ev in screen.events(tick=app.tick_every()):
+                kind = ev[0]
+                if kind in ("mouse", "key", "char") and not app.visible:
+                    app.dispatch(("wake",))              # input means it is in sight after all
+                    last = time.monotonic()
+                if kind == "tick" and app.master and app.visible and time.monotonic() - last < app.interval:
+                    if app.dwell():
                         app.draw()
                     continue
+                if kind in ("tick", "wake"):
+                    last = time.monotonic()
                 app.dispatch(ev)
-                app.draw()
+                screen.tick = app.tick_every()
+                if app.visible or kind not in ("tick", "wake"):
+                    app.draw()
     except SystemExit as e:
         sys.exit(0 if e.code is None else e.code)
+    finally:
+        tmuxlink.forget_wake()

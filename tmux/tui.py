@@ -11,6 +11,7 @@ import signal
 import sys
 import termios
 import tty
+import unicodedata
 
 
 # ─── colours (Catppuccin Mocha) ───
@@ -25,65 +26,92 @@ HOVER, SURFACE, DANGER_BG = bg("#45475a"), bg("#313244"), bg("#f38ba8")
 TRACK, THUMB = fg("#313244"), ACCENT
 BOLD, RESET, CLEAR_EOL = "\x1b[1m", "\x1b[0m", "\x1b[K"
 
-ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+# Escape sequences take no room on screen: colours and other CSI codes, OSC strings such as
+# hyperlinks (\e]8;;url\e\\, which `capture-pane -e` keeps) and charset switches
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=>]")
+
+
+def cw(ch):
+    """Cells a character takes: 2 for wide ones (CJK, most emoji), 0 for combining marks
+    and zero-width joiners / selectors, 1 for the rest (Nerd Font icons included)."""
+    if ch < "\u0300":
+        return 1
+    if unicodedata.combining(ch) or ch in "\u200b\u200c\u200d\ufe0e\ufe0f":
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
 
 def vlen(s):
-    """Visible width (every glyph used here is one cell wide)."""
-    return len(ANSI.sub("", s))
+    """Visible width in cells."""
+    t = ANSI.sub("", s)
+    return len(t) if t.isascii() else sum(cw(c) for c in t)
 
 
 def cut(s, n):
     """First n visible cells of s, keeping its colour codes, so no line ever wraps."""
-    out, vis, i = [], 0, 0
+    out, vis, i, full = [], 0, 0, False
     while i < len(s):
         m = ANSI.match(s, i)
         if m:
             out.append(m.group())
             i = m.end()
             continue
-        if vis < n:
-            out.append(s[i])
-            vis += 1
+        if not full:
+            w = cw(s[i])
+            if vis + w <= n:
+                out.append(s[i])
+                vis += w
+            else:
+                full = True               # a wide character that does not fit ends the text
         i += 1
     return "".join(out)
 
 
+def pad(s, n, right=False):
+    """s (plain text that fits) padded with spaces to n cells, on the left when right=True."""
+    gap = " " * max(0, n - vlen(s))
+    return gap + s if right else s + gap
+
+
 def ellipsis(s, n):
     """Plain text shortened to n cells with a trailing …"""
-    return s if len(s) <= n else (s[: max(0, n - 1)] + "…" if n > 0 else "")
+    return s if vlen(s) <= n else (cut(s, n - 1) + "…" if n > 0 else "")
 
 
 def wrap(line, width, indent="  "):
     """Split a line (with colour codes) into pieces of `width` visible cells, at a space
     when there is one in the second half of the piece (else mid-word, e.g. a long URL)."""
+    width = max(width, len(indent) + 2)       # room for at least one (wide) character
     out, cur, vis, i = [], [], 0, 0          # cur: tokens (colour codes and single characters)
+    start = 0                                # cells the current piece began with (its indent)
     while i < len(line):
         m = ANSI.match(line, i)
         if m:
             cur.append(m.group())
             i = m.end()
             continue
-        if vis == width:
+        w = cw(line[i])
+        if vis + w > width and vis > start:
             cut_at, seen = None, 0
             for k, tok in enumerate(cur):            # last space past the middle of the piece
                 if not ANSI.fullmatch(tok):
-                    seen += len(tok)
+                    seen += vlen(tok)
                     if tok == " " and seen > max(len(indent), width // 2):
                         cut_at = k
             if cut_at is not None and line[i] != " ":
                 rest = cur[cut_at + 1:]
                 out.append("".join(cur[:cut_at]))
                 cur = [indent] + rest
-                vis = len(indent) + sum(len(t) for t in rest if not ANSI.fullmatch(t))
+                vis = len(indent) + sum(vlen(t) for t in rest if not ANSI.fullmatch(t))
             else:
                 out.append("".join(cur))
                 cur, vis = [indent], len(indent)      # continuation lines are indented
                 if line[i] == " ":                    # no space at the start of a continuation
                     i += 1
                     continue
+            start = len(indent)
         cur.append(line[i])
-        vis += 1
+        vis += w
         i += 1
     out.append("".join(cur))
     return out
@@ -241,10 +269,13 @@ class Screen:
         tty.setraw(self.fd)
         sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[?1003h\x1b[?1006h")
         sys.stdout.flush()
-        # resize: the signal only pokes a pipe, the event loop redraws
+        # resize (SIGWINCH) and "your tab is in sight again" (SIGUSR1, see tmuxlink.note_wake):
+        # the signals only poke a pipe, the event loop handles them
         self.wake_r, wake_w = os.pipe()
         os.set_blocking(wake_w, False)
         signal.signal(signal.SIGWINCH, lambda *_: os.write(wake_w, b"."))
+        signal.signal(signal.SIGUSR1, lambda *_: os.write(wake_w, b"v"))
+        self.tick = None
         return self
 
     def __exit__(self, *exc):
@@ -266,32 +297,50 @@ class Screen:
 
     @staticmethod
     def paint(lines):
-        """lines: one string per screen row (already cut to width)."""
+        """lines: one string per screen row (already cut to width) · never more rows than the
+        pane has: one more would scroll the title row away (and mouse rows with it)."""
+        lines = lines[:max(1, Screen.size()[0])]
         sys.stdout.write("\x1b[H" + "\r\n".join(l + RESET + CLEAR_EOL for l in lines) + "\x1b[J")
         sys.stdout.flush()
 
     def events(self, tick=None):
-        """Yield ('resize',) · ('mouse', button, x, y, released) · ('key', name) · ('char', text)
-        and, when tick (seconds) is given, ('tick',) every time that long passes with no input."""
+        """Yield ('resize',) · ('wake',) · ('mouse', button, x, y, released) · ('key', name) ·
+        ('char', text) and, when tick (seconds) is given, ('tick',) every time that long passes
+        with no input. self.tick can be changed meanwhile (a shorter one applies at once)."""
         import time
-        due = time.monotonic() + tick if tick else None
+        self.tick = tick
+        due = None
         while True:
-            wait = max(0.0, due - time.monotonic()) if due else None
+            now = time.monotonic()
+            if self.tick and (due is None or due - now > self.tick):
+                due = now + self.tick
+            elif not self.tick:
+                due = None
+            wait = max(0.0, due - now) if due else None
             r, _, _ = select.select([self.fd, self.wake_r], [], [], wait)
             if due and time.monotonic() >= due:
-                due = time.monotonic() + tick
+                due = time.monotonic() + self.tick
                 yield ("tick",)
             if not r:
                 continue
             if self.wake_r in r:
-                os.read(self.wake_r, 64)
-                yield ("resize",)
+                pokes = os.read(self.wake_r, 64)
+                if b"v" in pokes:
+                    yield ("wake",)
+                if b"." in pokes:
+                    yield ("resize",)
                 if self.fd not in r:
                     continue
-            data = os.read(self.fd, 4096)
-            if data == b"\x1b":   # an Esc that starts a sequence may arrive split
-                if select.select([self.fd], [], [], 0.03)[0]:
-                    data += os.read(self.fd, 4096)
+            data, self.carry = getattr(self, "carry", b"") + os.read(self.fd, 4096), b""
+            # a read can end in the middle of a sequence (fast mouse moves) or of a UTF-8
+            # character: give the rest 30 ms, and keep what is still cut off for the next read
+            # (an Esc alone after 30 ms is the Esc key)
+            t = cut_off(data)
+            if t is not None and select.select([self.fd], [], [], 0.03)[0]:
+                data += os.read(self.fd, 4096)
+                t = cut_off(data)
+            if t is not None and data[t:] != b"\x1b":
+                data, self.carry = data[:t], data[t:]
             yield from parse(data)
 
 
@@ -303,6 +352,22 @@ SEQS = {b"\x1b[A": "up", b"\x1bOA": "up", b"\x1b[B": "down", b"\x1bOB": "down",
 CTRL = {b"\r": "enter", b"\n": "enter", b"\x7f": "backspace", b"\x08": "backspace", b"\t": "tab",
         b"\x1b": "esc", b"\x15": "ctrl-u", b"\x03": "ctrl-c", b"\x04": "ctrl-d", b"\x05": "ctrl-e",
         b"\x0e": "ctrl-n", b"\x12": "ctrl-r", b"\x18": "ctrl-x", b"\x14": "ctrl-t"}
+
+
+CUT_SEQ = re.compile(rb"\x1b(?:\[[0-9;<?]*|O)?")
+
+
+def cut_off(data):
+    """Where an escape sequence or a UTF-8 character cut off by the end of data starts, or None."""
+    esc = data.rfind(b"\x1b", max(0, len(data) - 32))
+    if esc >= 0 and CUT_SEQ.fullmatch(data, esc):
+        return esc
+    k, cont = len(data) - 1, 0
+    while k >= 0 and cont < 3 and 0x80 <= data[k] < 0xC0:
+        k, cont = k - 1, cont + 1
+    if k >= 0 and data[k] >= 0xC0 and cont + 1 < (2 if data[k] < 0xE0 else 3 if data[k] < 0xF0 else 4):
+        return k
+    return None
 
 
 def parse(data):
@@ -323,7 +388,13 @@ def parse(data):
                 data = data[m.end() if m else 2:]
                 continue
             ch = data[:1]
-            if ch in CTRL:
+            if ch == b"\x1b" and len(data) > 1 and data[1:2] >= b" ":     # Alt+key: not Esc + key
+                n = 2
+                while n < len(data) and 0x80 <= data[n] < 0xC0:
+                    n += 1
+                yield ("key", "alt-" + data[1:n].decode("utf-8", "ignore"))
+                data = data[n:]
+            elif ch in CTRL:
                 yield ("key", CTRL[ch])
                 data = data[1:]
             elif ch >= b" ":

@@ -24,14 +24,6 @@ def put(option, value):
         tmux("set", "-g", option, str(value))
 
 
-def take(option):
-    """Read a one-shot message left by another pane, and clear it."""
-    value = get(option)
-    if value:
-        tmux("set", "-gu", option)
-    return value
-
-
 def focus(label):
     """Select the pane whose @label is `label` in this session, switching tab if needed."""
     out = tmux("list-panes", "-s", "-F", "#{pane_id}\t#{window_id}\t#{@label}").stdout
@@ -80,16 +72,35 @@ def pane_state(option):
     return zoomed == "1", (value or None)
 
 
-def pane_view(option):
-    """(zoomed, visible, value of a global option) in one tmux call. Visible: someone is
-    attached to this session, this pane's tab is the current one and no other pane is zoomed."""
+def pane_view(*options):
+    """(zoomed, visible, {option: value or None}) in one tmux call. Visible: someone is
+    attached to this session, this pane's tab is the current one and no other pane is zoomed.
+    Outside tmux (no answer) it counts as visible, so the pane still works."""
     pane = os.environ.get("TMUX_PANE", "")
-    fmt = ("#{window_zoomed_flag}\t"
-           "#{&&:#{&&:#{window_active},#{session_attached}},#{||:#{?window_zoomed_flag,0,1},#{pane_active}}}\t"
-           + ("#{" + option + "}" if option else ""))
+    fmt = "\t".join(["#{window_zoomed_flag}",
+                     "#{&&:#{&&:#{window_active},#{session_attached}},#{||:#{?window_zoomed_flag,0,1},#{pane_active}}}"]
+                    + ["#{" + o + "}" for o in options])
     out = tmux("display", "-p", *(("-t", pane) if pane else ()), fmt).stdout.rstrip("\n")
-    zoomed, visible, value = (out.split("\t", 2) + ["", ""])[:3]
-    return zoomed == "1", visible == "1", (value or None)
+    if not out:
+        return False, True, dict.fromkeys(options)
+    zoomed, visible, *values = out.split("\t", 1 + len(options))
+    values += [""] * (len(options) - len(values))
+    return zoomed == "1", visible == "1", {o: (v or None) for o, v in zip(options, values)}
+
+
+# Panes out of sight do no work (tmux/table.py, tmux/viewer.py, system/resources.sh): they
+# note their pid in the pane option @wake, and tmux sends them SIGUSR1 when their tab comes
+# into sight (the hooks in tmux/tmux.conf), so they refresh at once instead of polling.
+def note_wake():
+    pane = os.environ.get("TMUX_PANE", "")
+    if pane:
+        tmux("set", "-p", "-t", pane, "@wake", str(os.getpid()))
+
+
+def forget_wake():
+    pane = os.environ.get("TMUX_PANE", "")
+    if pane:
+        tmux("set", "-pu", "-t", pane, "@wake")
 
 
 def toggle_zoom():

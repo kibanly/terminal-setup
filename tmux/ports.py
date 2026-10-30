@@ -39,8 +39,9 @@ def docker_ports():
     found = {}
     for line in out.splitlines():
         name, _, ports = line.partition("|")
-        for port in re.findall(r":(\d+)->", ports):
-            found[int(port)] = name
+        for a, b in re.findall(r":(\d+)(?:-(\d+))?->", ports):      # ranges: 8000-8002->…
+            for port in range(int(a), int(b or a) + 1):
+                found[port] = name
     return found
 PROC = re.compile(r'\("([^"]+)",pid=(\d+)')
 
@@ -201,7 +202,7 @@ class Ports(TableApp):
         self.flash(f"copied: {text}")
 
     def show_proc(self, r):
-        tmux("set", "-g", "@procs-query", str(r["pid"]))
+        tmux("set", "-g", "@procs-query", f"pid={r['pid']}")
         out = tmux("list-panes", "-F", "#{pane_id}\t#{@label}").stdout
         for line in out.splitlines():
             pane, _, lab = line.partition("\t")
@@ -209,14 +210,14 @@ class Ports(TableApp):
                 tmux("select-pane", "-t", pane)
         self.flash(f"{r['name']} → Processes pane")
 
-    def dispatch(self, ev):
-        if ev[0] == "tick":          # a filter sent from the Processes pane
-            q = tmux("show", "-gqv", "@ports-query").stdout.strip()
-            if q:
-                tmux("set", "-gu", "@ports-query")
-                self.query = q[4:] if q.startswith("pid=") else q
-                self.query_changed()
-        super().dispatch(ev)
+    watch = ("@ports-query",)
+
+    def on_tick(self):               # a filter sent from the Processes pane
+        q = (self.opts.get("@ports-query") or "").strip()
+        if q:
+            tmux("set", "-gu", "@ports-query")
+            self.query = q
+            self.query_changed()
 
 
 if __name__ == "__main__":

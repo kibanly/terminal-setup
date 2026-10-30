@@ -50,8 +50,31 @@ session_exists() { tmux has-session -t "=$1" 2>/dev/null }
 session_names()  { tmux ls -F '#{session_name}' 2>/dev/null }
 current_session() { [[ -n $TMUX ]] && tmux display -p '#S' 2>/dev/null }
 
-# tmux does not allow "." or ":" in session names
-clean_name() { print -r -- ${${1//[.:]/-}//[[:space:]]##/-} }
+# tmux does not allow "." or ":" in session names; spaces around go, and a leading "-"
+# would be read as an option
+clean_name() {
+  local n=${${1##[[:space:]]#}%%[[:space:]]#}
+  n=${${n//[.:]/-}//[[:space:]]##/-}
+  print -r -- ${n##-#}
+}
+
+# a closed session's description must not pass to a new session with the same name
+forget_description() {
+  local f=~/.tmux/descriptions.tsv
+  [[ -f $f ]] && awk -F'\t' -v n="$1" '$1 != n' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# rename_session <old> <new>: also moves its description (picker → Describe…). The system
+# monitor keeps its name: tmux/system.sh finds it by it (and would build a second one).
+rename_session() {
+  local old=$1 new=$(clean_name "$2") f=~/.tmux/descriptions.tsv
+  [[ -z $new || $new == $old ]] && return 0
+  [[ $old == system || $new == system ]] && { fail "the system monitor keeps its name"; return 1 }
+  tmux rename-session -t "=$old" -- "$new" || return
+  [[ -f $f ]] && awk -F'\t' -v o="$old" -v n="$new" 'BEGIN { OFS = FS } $1 == o { $1 = n } { print }' "$f" > "$f.tmp" \
+    && mv "$f.tmp" "$f"
+  ok "$old → ${B}$new${X}"
+}
 
 # ─────────────── Open / create ───────────────
 
@@ -152,8 +175,8 @@ pick() {
         pause; continue ;;
       ctrl-r)
         [[ $kind == session ]] || continue
-        local new=$(clean_name "$(ask "Rename ${name} to:")")
-        [[ -n $new ]] && { tmux rename-session -t "=$name" "$new" || pause }
+        local new=$(ask "Rename ${name} to:")
+        [[ -n $new ]] && { rename_session "$name" "$new" || pause }
         continue ;;
       ctrl-x)
         [[ $kind == session ]] || continue
@@ -232,9 +255,8 @@ list() {
 }
 
 rename() {
-  local new=$(clean_name "$2")
-  [[ -z $new ]] && { fail "usage: terminal rename <old> <new>"; return 1 }
-  tmux rename-session -t "=$1" "$new" && ok "$1 → ${B}$new${X}"
+  [[ -z $(clean_name "$2") ]] && { fail "usage: terminal rename <old> <new>"; return 1 }
+  rename_session "$1" "$2"
 }
 
 help() {
@@ -286,7 +308,7 @@ case "$1" in
                     else
                       confirm "Close session ${2} and all its windows?" || exit 1
                     fi
-                    tmux kill-session -t "=$2" && ok "killed ${B}$2${X}" ;;
+                    tmux kill-session -t "=$2" && ok "killed ${B}$2${X}" && forget_description "$2" ;;
   # Every session but the system monitor (always there). Saved right away: otherwise the
   # last auto-save (every 5 min) would bring them all back the next time tmux starts.
   kill-all)         local -a all=(${(f)"$(session_names)"}); all=(${all:#system})

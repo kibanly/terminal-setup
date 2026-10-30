@@ -75,14 +75,13 @@ class Search(SourcesPane, TableApp):
         return rows
 
     # typing only marks the search as pending; it runs on the next tick (no lag while typing)
+    def on_tick(self):
+        if self.changed() or self.pending:
+            self.pending = False
+            self.reload()
+
     def dispatch(self, ev):
         kind = ev[0]
-        if kind == "tick":
-            if self.changed() or self.pending:
-                self.pending = False
-                self.reload()
-            super().dispatch(ev)                    # zoom state, messages fade (no reload: see above)
-            return
         if not (self.menu or self.ask or self.prompt):
             if kind == "char":
                 self.query += ev[1]
