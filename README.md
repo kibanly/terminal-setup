@@ -155,13 +155,14 @@ En WSL, «abrir en el navegador» y `open` usan el navegador y el Explorador **d
 5. **zsh como shell** de inicio (pregunta antes; en macOS ya lo es).
 6. **Comprobación**: [`install/doctor.sh`](install/doctor.sh) revisa versiones, configuración, plugins y fuente.
 
-Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta.
+Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta. Si ya está instalado, además hace un **`update`** (paquetes y plugins a su última versión); con `--no-update` no lo hace.
 
 | Opción | Qué hace |
 |---|---|
 | `./install.sh --dry-run` | enseña lo que haría, sin cambiar nada |
 | `./install.sh --yes` | sin preguntas (por ejemplo, para scripts) |
-| `./install.sh --config-only` | solo la configuración: ni paquetes, ni fuente, ni plugins |
+| `./install.sh --config-only` | solo la configuración: ni paquetes, ni fuente, ni plugins (ni `update`) |
+| `./install.sh --no-update` | ya instalado: solo lo que falte, sin `update` |
 | `bash install/doctor.sh` | comprobar la instalación en cualquier momento |
 
 **Qué se instala**
@@ -230,8 +231,8 @@ Para aplicar los cambios:
 ```bash
 cd ~/workspace/terminal-setup
 git pull          # lo último del repo
-./install.sh      # instala lo que haga falta para esa versión (si no falta nada, no hace nada)
-update            # paquetes del sistema y plugins a su última versión
+./install.sh      # instala lo que falte y, como ya está instalado, hace `update`:
+                  # paquetes del sistema y plugins a su última versión
 ```
 
 ---

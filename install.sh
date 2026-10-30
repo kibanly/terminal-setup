@@ -2,12 +2,14 @@
 # ═══════════════════════════════════════════════════════════════
 #  terminal-setup · installer
 #  Ubuntu 24.04 / 26.04 (also in WSL) and macOS. Run it again at any time: it only
-#  does what is still missing.
+#  does what is still missing, and when it is installed already it also runs `update`
+#  (packages and plugins to their latest versions).
 #
 #    ./install.sh              shows the plan, asks, installs
 #    ./install.sh --yes        no questions
 #    ./install.sh --dry-run    only shows what it would do
 #    ./install.sh --config-only only the config files (no packages, font, plugins)
+#    ./install.sh --no-update  installed already: only what is missing, no `update`
 #
 #  1. packages (apt / Homebrew) that are missing, at the versions the setup needs
 #  2. the Nerd Font
@@ -15,7 +17,8 @@
 #     (your files stay; ./uninstall.sh takes those lines out again)
 #  4. tmux and zsh plugins (install/plugins.lock)
 #  5. zsh as your login shell
-#  6. a final check (install/doctor.sh)
+#  6. installed already: `update` (zsh/functions.zsh)
+#  7. a final check (install/doctor.sh)
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -28,13 +31,14 @@ USER=${USER:-$(id -un)}                    # not set in some containers
 . "$REPO/install/plugins.sh"
 . "$REPO/install/config.sh"
 
-ASSUME_YES=0 DRY_RUN=0 CONFIG_ONLY=0
+ASSUME_YES=0 DRY_RUN=0 CONFIG_ONLY=0 NO_UPDATE=0
 for arg in "$@"; do
   case $arg in
     -y|--yes)     ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
     --config-only|--links-only) CONFIG_ONLY=1 ;;
-    -h|--help)    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-update)  NO_UPDATE=1 ;;
+    -h|--help)    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)            die "unknown option: $arg (see ./install.sh --help)" ;;
   esac
 done
@@ -58,6 +62,12 @@ login_shell_zsh() {
     ok "zsh from the next login"
   fi
 }
+
+# installed already (both files load the repo): this run also updates everything
+UPDATE=0
+if [ "$CONFIG_ONLY" = 0 ] && [ "$NO_UPDATE" = 0 ] && has_block "$HOME/.zshrc" && has_block "$HOME/.tmux.conf"; then
+  UPDATE=1
+fi
 
 # ─── plan ───
 detect_platform
@@ -83,6 +93,7 @@ if [ "$CONFIG_ONLY" = 0 ]; then
 fi
 info "config: one line at the end of ~/.zshrc and of ~/.tmux.conf loads the repo's"
 info "${D}(your files stay as they are; a copy of each goes to $(tilde "$BACKUP_DIR"))${R}"
+[ "$UPDATE" = 1 ] && info "installed already: then ${B}update${R}, packages and plugins to their latest versions"
 [ -n "$(links_into_repo)" ] && info "an install from before (links into the repo) becomes plain files: $(links_into_repo | sed 's|^|~/|' | tr '\n' ' ')"
 
 ask "Go ahead?" || { info "nothing changed"; exit 0; }
@@ -95,6 +106,17 @@ fi
 configure
 [ "$CONFIG_ONLY" = 0 ] && plugins_install
 [ "$CONFIG_ONLY" = 0 ] && login_shell_zsh
+
+if [ "$UPDATE" = 1 ]; then
+  step "Update (packages and plugins to their latest versions)"
+  if [ "$DRY_RUN" = 1 ]; then
+    info "[dry-run] update  (zsh/functions.zsh)"
+  else
+    # functions.zsh returns non-zero at its end (a hook test): only `update` counts
+    TERMINAL_SETUP=$REPO zsh -c '. "$TERMINAL_SETUP/zsh/functions.zsh"; update' \
+      || warn "update finished with errors (see above)"
+  fi
+fi
 
 # a running tmux picks up the new config
 if [ "$DRY_RUN" = 0 ] && tmux info >/dev/null 2>&1; then
