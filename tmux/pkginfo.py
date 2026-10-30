@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 #  Package pane of the `packages` tab · follows the package highlighted in
-#  Packages, Search or Updates, whatever its source (apt, snap, brew: ~/.tmux/pkgsrc.py)
+#  Packages, Search or Updates, whatever its source (apt, snap, brew: tmux/pkgsrc.py)
 #
 #  Info     installed / available version, your note (why you installed it) and
 #           what the source knows: section, size, homepage (apt) · publisher,

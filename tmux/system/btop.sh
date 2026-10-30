@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # btop for the Info tab, with the boxes that fit this pane (btop refuses to draw
-# when a box does not fit: "Terminal size too small"). Presets come from
-# ~/.config/btop/btop.conf:  1 cpu mem net · 2 cpu mem · 3 cpu · 4 mem net.
+# when a box does not fit: "Terminal size too small"). Presets come from the repo's
+# config/btop/btop.conf:  1 cpu mem net · 2 cpu mem · 3 cpu · 4 mem net. Your own
+# btop keeps ~/.config/btop/btop.conf (a btop without -c reads that one: install.sh
+# puts the repo's there when you have none).
 # info-fit.sh restarts it when the pane changes enough to need other boxes.
 preset_for() {
   local w=$1 h=$2
@@ -21,4 +23,6 @@ if [[ $p == none ]]; then
   trap 'exit 0' WINCH
   while :; do sleep 60 & wait $!; done
 fi
+conf=$(cd "$(dirname "$0")/../.." && pwd)/config/btop/btop.conf
+if btop --help 2>&1 | grep -q -- '--config'; then exec btop -c "$conf" -p "$p"; fi
 exec btop -p "$p"

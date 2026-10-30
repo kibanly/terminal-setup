@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
-#  Containers pane of the `docker` tab (~/.tmux/system.sh) · like `dps`, live
+#  Containers pane of the `docker` tab (tmux/system.sh) · like `dps`, live
 #  Every container (running first): compose project, state / health, CPU,
 #  RAM used / limit, architecture (yellow when emulated), networks, published
 #  ports. Title row: totals, emulated containers, restart warnings.
@@ -319,7 +319,7 @@ class Containers(TableApp):
         self.popup(f"{'root' if root else 'shell'} · {r['name']} · exit closes", "bash -c " + shlex.quote(script))
 
     def open_folder(self, r):
-        subprocess.Popen([os.path.expanduser("~/.tmux/terminal.zsh"), "open", r["project"], r["workdir"]],
+        subprocess.Popen([os.path.join(os.path.dirname(os.path.realpath(__file__)), "terminal.zsh"), "open", r["project"], r["workdir"]],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.flash(f"session {r['project']} in {r['workdir']}")
 

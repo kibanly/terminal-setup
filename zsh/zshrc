@@ -1,11 +1,11 @@
 # ═══════════════════════════════════════════════════════════════
-#  terminal-setup · zsh  (~/.zshrc is a link to this file)
+#  terminal-setup · zsh  (sourced at the end of your ~/.zshrc: ./install.sh adds the line)
 #  Ubuntu 24.04 / 26.04, WSL and macOS. What only one system needs is in
-#  zsh/platform/<linux|wsl|macos>.zsh, loaded below. Things for this machine
-#  only (not in the repo): ~/.zshrc.local, read at the end.
+#  zsh/platform/<linux|wsl|macos>.zsh, loaded below. Your own things stay in ~/.zshrc:
+#  above the terminal-setup line they are loaded first, below it they win over this file.
 # ═══════════════════════════════════════════════════════════════
 
-TERMINAL_SETUP=${${(%):-%x}:A:h:h}         # the repo: this file is a link into it
+export TERMINAL_SETUP=${${(%):-%x}:A:h:h}  # the repo: this file is its zsh/zshrc
 
 typeset -U path fpath
 # Homebrew, when it is installed (macOS: /opt/homebrew or /usr/local · Linux: /home/linuxbrew):
@@ -17,7 +17,8 @@ unset _brew
 path=("$HOME/.local/bin" $path)
 export EDITOR=micro
 export VISUAL=micro
-export BROWSER=~/.tmux/system/open.sh      # the desktop's browser, whatever the system
+export BROWSER=$TERMINAL_SETUP/tmux/system/open.sh      # the desktop's browser, whatever the system
+export STARSHIP_CONFIG=${STARSHIP_CONFIG:-$TERMINAL_SETUP/config/starship.toml}   # the prompt
 
 # What only this system needs (open, clipboard, ssh-agent, Windows integration…)
 if [[ $OSTYPE == darwin* ]]; then
@@ -77,8 +78,8 @@ export FZF_ALT_C_OPTS="--preview 'eza --tree --level=2 --color=always {}'"
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
 # Alias and functions
-[ -f ~/.zsh_aliases ] && source ~/.zsh_aliases
-[ -f ~/.zsh_functions ] && source ~/.zsh_functions
+source "$TERMINAL_SETUP/zsh/aliases.zsh"
+source "$TERMINAL_SETUP/zsh/functions.zsh"
 
 # Plugins
 [ -f ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh ] && source ~/.zsh/plugins/fzf-tab/fzf-tab.plugin.zsh
@@ -117,15 +118,12 @@ if [[ -n $TMUX && -n $TMUX_PANE ]]; then
   bindkey '^D' _tmux_ctrl_d
 fi
 
-# Things for this machine only (not in the repo) · before the tmux autostart, so it can turn it off
-[ -f ~/.zshrc.local ] && source ~/.zshrc.local
-
 # tmux in every new terminal window or tab, straight into the system monitor (Ctrl+a d
 # leaves tmux for this plain shell). Skipped inside tmux, nested shells, IDE terminals, SSH and Claude Code.
-# Disable with: export TERMINAL_NO_AUTOSTART=1 in ~/.zshrc.local (or ~/.zshenv)
+# Disable with: export TERMINAL_NO_AUTOSTART=1 in ~/.zshrc, above the terminal-setup line
 if [[ -o interactive && -t 0 && -t 1 && -z $TMUX && $SHLVL == 1
       && -z $TERMINAL_NO_AUTOSTART && -z $CLAUDECODE && -z $SSH_CONNECTION
       && $TERM_PROGRAM != vscode && $TERMINAL_EMULATOR != JetBrains* ]] \
-   && (( $+commands[tmux] )) && [[ -x ~/.tmux/terminal.zsh ]]; then
-  ~/.tmux/terminal.zsh autostart
+   && (( $+commands[tmux] )) && [[ -x $TERMINAL_SETUP/tmux/terminal.zsh ]]; then
+  $TERMINAL_SETUP/tmux/terminal.zsh autostart
 fi

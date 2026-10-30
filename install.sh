@@ -7,12 +7,12 @@
 #    ./install.sh              shows the plan, asks, installs
 #    ./install.sh --yes        no questions
 #    ./install.sh --dry-run    only shows what it would do
-#    ./install.sh --links-only only (re)links the config files (no packages, font, plugins)
+#    ./install.sh --config-only only the config files (no packages, font, plugins)
 #
 #  1. packages (apt / Homebrew) that are missing, at the versions the setup needs
 #  2. the Nerd Font
-#  3. links: ~/.zshrc, ~/.tmux, ~/.tmux.conf… point into this repo (what was there
-#     before goes to ~/.terminal-setup-backup/<date>/; ./uninstall.sh puts it back)
+#  3. config: a line at the end of your ~/.zshrc and ~/.tmux.conf loads the repo's
+#     (your files stay; ./uninstall.sh takes those lines out again)
 #  4. tmux and zsh plugins (install/plugins.lock)
 #  5. zsh as your login shell
 #  6. a final check (install/doctor.sh)
@@ -26,55 +26,20 @@ USER=${USER:-$(id -un)}                    # not set in some containers
 . "$REPO/install/versions.sh"
 . "$REPO/install/fonts.sh"
 . "$REPO/install/plugins.sh"
+. "$REPO/install/config.sh"
 
-ASSUME_YES=0 DRY_RUN=0 LINKS_ONLY=0
+ASSUME_YES=0 DRY_RUN=0 CONFIG_ONLY=0
 for arg in "$@"; do
   case $arg in
     -y|--yes)     ASSUME_YES=1 ;;
     -n|--dry-run) DRY_RUN=1 ;;
-    --links-only) LINKS_ONLY=1 ;;
+    --config-only|--links-only) CONFIG_ONLY=1 ;;
     -h|--help)    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)            die "unknown option: $arg (see ./install.sh --help)" ;;
   esac
 done
 BACKUP_DIR="$HOME/.terminal-setup-backup/$(date +%Y%m%d-%H%M%S)"
-
-# what goes where: <file in the repo> <link in your home>
-LINKS="
-zsh/zshrc                  .zshrc
-zsh/aliases.zsh            .zsh_aliases
-zsh/functions.zsh          .zsh_functions
-tmux                       .tmux
-tmux/tmux.conf             .tmux.conf
-config/starship.toml       .config/starship.toml
-config/btop/btop.conf      .config/btop/btop.conf
-config/micro/settings.json .config/micro/settings.json
-"
-# what lives inside an existing ~/.tmux and is yours (not in the repo): carried over into
-# the linked one · the plugins too, so the versions you have are kept
-TMUX_USER_DATA="plugins logs descriptions.tsv"
-
-link_all() {
-  step "Config files (links into the repo)"
-  local src dst old
-  while read -r src dst; do
-    [ -n "$src" ] || continue
-    if [ "$dst" = .tmux ] && [ -d "$HOME/.tmux" ] && [ ! -L "$HOME/.tmux" ]; then
-      old=$HOME/.tmux
-      link "$REPO/$src" "$HOME/$dst"
-      # logs, session descriptions… from the old ~/.tmux (now in the backup) come along
-      local item
-      for item in $TMUX_USER_DATA; do
-        if [ -e "$BACKUP_DIR/.tmux/$item" ] && [ ! -e "$REPO/tmux/$item" ]; then
-          run cp -R "$BACKUP_DIR/.tmux/$item" "$REPO/tmux/$item"
-          info "${D}kept your $(tilde "$old")/$item${R}"
-        fi
-      done
-      continue
-    fi
-    link "$REPO/$src" "$HOME/$dst"
-  done <<< "$LINKS"
-}
+case $REPO in *[[:space:]]*) die "the repo's path has spaces ($REPO): clone it somewhere without them" ;; esac
 
 login_shell_zsh() {
   local zsh_path current
@@ -103,10 +68,10 @@ printf '%s%s%s\n' "$D" "repo: $(tilde "$REPO")" "$R"
 case "$OS:$OS_VERSION" in
   ubuntu:24.04|ubuntu:26.04|macos:*) ;;
   ubuntu:*) warn "Ubuntu $OS_VERSION is not tested (24.04 and 26.04 are): going on with apt" ;;
-  *)        [ "$LINKS_ONLY" = 1 ] || die "$OS_NAME is not supported (Ubuntu 24.04 / 26.04, WSL, macOS). ./install.sh --links-only links the config anyway." ;;
+  *)        [ "$CONFIG_ONLY" = 1 ] || die "$OS_NAME is not supported (Ubuntu 24.04 / 26.04, WSL, macOS). ./install.sh --config-only sets up the config anyway." ;;
 esac
 
-if [ "$LINKS_ONLY" = 0 ]; then
+if [ "$CONFIG_ONLY" = 0 ]; then
   step "Plan"
   if [ "$OS" = macos ]; then
     . "$REPO/install/brew.sh"; brew_plan; brew_show_plan
@@ -116,24 +81,28 @@ if [ "$LINKS_ONLY" = 0 ]; then
   font_plan; font_show_plan
   plugins_plan; plugins_show_plan
 fi
-info "links: ~/.zshrc ~/.zsh_aliases ~/.zsh_functions ~/.tmux ~/.tmux.conf"
-info "       ~/.config/starship.toml ~/.config/btop/btop.conf ~/.config/micro/settings.json"
-info "${D}(whatever is there now is kept in $(tilde "$BACKUP_DIR"))${R}"
+info "config: one line at the end of ~/.zshrc and of ~/.tmux.conf loads the repo's"
+info "${D}(your files stay as they are; a copy of each goes to $(tilde "$BACKUP_DIR"))${R}"
+[ -n "$(links_into_repo)" ] && info "an install from before (links into the repo) becomes plain files: $(links_into_repo | sed 's|^|~/|' | tr '\n' ' ')"
 
 ask "Go ahead?" || { info "nothing changed"; exit 0; }
 
 # ─── do it ───
-if [ "$LINKS_ONLY" = 0 ]; then
+if [ "$CONFIG_ONLY" = 0 ]; then
   if [ "$OS" = macos ]; then brew_install; else apt_install; fi
   font_install
 fi
-link_all
-[ "$LINKS_ONLY" = 0 ] && plugins_install
-[ "$LINKS_ONLY" = 0 ] && login_shell_zsh
+configure
+[ "$CONFIG_ONLY" = 0 ] && plugins_install
+[ "$CONFIG_ONLY" = 0 ] && login_shell_zsh
 
 # a running tmux picks up the new config
 if [ "$DRY_RUN" = 0 ] && tmux info >/dev/null 2>&1; then
   tmux source-file "$HOME/.tmux.conf" >/dev/null 2>&1 && ok "the running tmux reloaded its config"
+  # its monitor still runs the scripts from where the old links pointed: build it again
+  if [ "${MIGRATED:-0}" = 1 ] && tmux has-session -t system 2>/dev/null; then
+    "$REPO/tmux/system.sh" restart >/dev/null 2>&1 && ok "system monitor rebuilt"
+  fi
 fi
 
 if [ "$DRY_RUN" = 0 ]; then
@@ -142,7 +111,7 @@ if [ "$DRY_RUN" = 0 ]; then
 fi
 
 [ "${FONT_TODO:-}" = windows ] && font_windows_steps
-[ -d "$BACKUP_DIR" ] && printf '\n    Your previous files: %s · ./uninstall.sh puts them back\n' "$(tilde "$BACKUP_DIR")"
+[ -d "$BACKUP_DIR" ] && printf '\n    A copy of your files as they were: %s\n' "$(tilde "$BACKUP_DIR")"
 cat <<EOF
 
     ${B}Done.${R} Open a new terminal (or run: exec zsh). tmux starts by itself in the

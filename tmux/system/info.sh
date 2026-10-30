@@ -27,7 +27,7 @@ while :; do
     # drawing on top / no drawing: plain lines, cut to the pane so nothing wraps
     fastfetch --pipe false -c "$CONF" "${logo[@]}" 2>/dev/null | head -n "$rows" | python3 -I -c '
 import sys; sys.path.insert(0, sys.argv[2]); from tui import cut
-sys.stdout.write("\n".join(cut(l.rstrip("\n"), int(sys.argv[1])) + "\x1b[0m" for l in sys.stdin))' "$cols" "$HOME/.tmux"
+sys.stdout.write("\n".join(cut(l.rstrip("\n"), int(sys.argv[1])) + "\x1b[0m" for l in sys.stdin))' "$cols" "$(dirname "$0")/.."
   else
     fastfetch --pipe false -c "$CONF" "${logo[@]}" 2>/dev/null | head -n "$rows"
   fi

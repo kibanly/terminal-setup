@@ -3,7 +3,7 @@
 #  Logs pane of the `docker` tab · logs of the highlighted container
 #
 #  · readable: a coloured level badge, short time, message first; JSON, logfmt,
-#    Redis, PostgreSQL… understood (~/.tmux/logfmt.py); HTTP lines as
+#    Redis, PostgreSQL… understood (tmux/logfmt.py); HTTP lines as
 #    "GET /path → 200 · 12 ms"
 #  · tabs All / Warnings / Errors (with counts) · type to search: every word must
 #    appear; both look through the WHOLE log of the container, not only the end,

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 #  tmux guide · Shortcuts / Mouse / Terminal
-#  Opened by ~/.tmux/guide.zsh (Ctrl+a ? / Ctrl+a g / `terminal guide`).
+#  Opened by tmux/guide.zsh (Ctrl+a ? / Ctrl+a g / `terminal guide`).
 #
 #  Mouse: click a tab on top · hover highlights · click runs it · wheel scrolls
 #         · drag or click the scrollbar on the right
 #  Keys:  Tab / ← → switch tab · type to search (all tabs) · ↑↓ PgUp PgDn move
 #         · Enter runs · Esc clears / closes
 #
-#  The entries live in ~/.tmux/guide.zsh (GUIDE block).
+#  The entries live in tmux/guide.zsh (GUIDE block).
 # ═══════════════════════════════════════════════════════════════
 
 import os
@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from tui import (ACCENT, BOLD, CLEAR_EOL, CRUST, DIM, GREEN, HOVER, RESET, SUB, SURFACE, TEXT, THUMB,
                  TRACK, YELLOW, Screen, bg, cut, ellipsis, highlight, vlen)
 
-GUIDE_FILE = os.path.expanduser("~/.tmux/guide.zsh")
+GUIDE_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "guide.zsh")
 KEYS_W = 32
 WHEEL_STEP = 3
 TOP = 4            # first list row on screen (1-based): tabs, subtitle, rule, list…, footer
@@ -234,7 +234,7 @@ class Guide:
         client = subprocess.run(["tmux", "display", "-p", "#{client_name}"],
                                 capture_output=True, text=True).stdout.strip()
         if cmd == "@picker":
-            os.execvp("zsh", ["zsh", os.path.expanduser("~/.tmux/terminal.zsh"), "pick"])
+            os.execvp("zsh", ["zsh", os.path.join(os.path.dirname(os.path.realpath(__file__)), "terminal.zsh"), "pick"])
         if cmd.startswith("@shell:"):
             os.execvp("zsh", ["zsh", "-c", cmd[len("@shell:"):]])
         if cmd == "@menu":

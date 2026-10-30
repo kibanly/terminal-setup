@@ -1,9 +1,9 @@
 #!/usr/bin/env zsh
 # ═══════════════════════════════════════════════════════════════
 #  terminal · tmux session manager
-#  Used by: the `terminal` shell function (~/.zsh_functions), the Ctrl+a s
+#  Used by: the `terminal` shell function (zsh/functions.zsh), the Ctrl+a s
 #  popup and `terminal`. New Windows Terminal tabs open the `system` monitor
-#  session instead (~/.tmux/system.sh).
+#  session instead (tmux/system.sh).
 #  Sessions are created by hand: no project scanning.
 #
 #  Config (env vars):
@@ -11,6 +11,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 emulate -L zsh
+export TERMINAL_SETUP=${0:A:h:h}            # the repo (this file is in its tmux/)
 setopt extended_glob
 
 B=$'\e[1m' D=$'\e[2m' C=$'\e[36m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' M=$'\e[35m' X=$'\e[0m'
@@ -112,10 +113,10 @@ preview() {
 }
 
 pick() {
-  # ~/.tmux/sessions.py: hover, preview, rename / close buttons (close asks first).
+  # tmux/sessions.py: hover, preview, rename / close buttons (close asks first).
   # The fzf picker below is the fallback when python3 is missing.
   if (( $+commands[python3] )); then
-    python3 -I ~/.tmux/sessions.py
+    python3 -I $TERMINAL_SETUP/tmux/sessions.py
     return
   fi
 
@@ -157,7 +158,7 @@ pick() {
       ctrl-x)
         [[ $kind == session ]] || continue
         if [[ $name == system ]]; then           # always there: closing it means rebuilding it
-          confirm "The system monitor is always there: restart it?" && ~/.tmux/system.sh restart
+          confirm "The system monitor is always there: restart it?" && $TERMINAL_SETUP/tmux/system.sh restart
           continue
         fi
         if [[ $name == $(current_session) ]] || (( $(tmux display -p -t "=$name" '#{session_attached}' 2>/dev/null) > 0 )); then
@@ -193,9 +194,9 @@ autostart() {
     done
   fi
 
-  # straight into the system monitor (~/.tmux/system.sh); Ctrl+a s switches session,
+  # straight into the system monitor (tmux/system.sh); Ctrl+a s switches session,
   # Ctrl+a d leaves tmux and comes back to this shell
-  ~/.tmux/system.sh && return
+  $TERMINAL_SETUP/tmux/system.sh && return
   print -r -- "${D}Plain shell. Run ${X}${C}terminal${X}${D} any time to open the session picker.${X}"
 }
 
@@ -274,7 +275,7 @@ case "$1" in
                     session_exists "$2" || { fail "no session called $2"; exit 1 }
                     if [[ $2 == system ]]; then
                       confirm "The system monitor is always there: restart it?" || exit 1
-                      ~/.tmux/system.sh restart && ok "system monitor restarted"
+                      $TERMINAL_SETUP/tmux/system.sh restart && ok "system monitor restarted"
                       exit
                     fi
                     if [[ $2 == $(current_session) ]]; then
@@ -301,8 +302,8 @@ case "$1" in
                     fi ;;
   rename|mv)        [[ -z $3 ]] && { fail "usage: terminal rename <old> <new>"; exit 1 }
                     rename "$2" "$3" ;;
-  guide|g)          exec ~/.tmux/guide.zsh ;;
-  system|sys)       exec ~/.tmux/system.sh ${2:-open} ;;
+  guide|g)          exec $TERMINAL_SETUP/tmux/guide.zsh ;;
+  system|sys)       exec $TERMINAL_SETUP/tmux/system.sh ${2:-open} ;;
   help|h|-h|--help) help ;;
   _preview)         preview "$2" "$3" ;;
   _names)           session_names ;;                 # for zsh completion

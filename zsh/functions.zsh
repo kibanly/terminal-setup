@@ -315,8 +315,8 @@ fkill() {
 
 # Packages you installed yourself: apt (minus the base WSL image), snap apps and brew
 # formulae installed on request · same list and notes as the tmux system Packages tab
-# (both ask ~/.tmux/pkgsrc.py). Notes: ~/.apt-notes.tsv (apt by name, others as snap:NAME).
-_pkgsrc() { python3 -I ~/.tmux/pkgsrc.py "$@" }
+# (both ask tmux/pkgsrc.py). Notes: ~/.apt-notes.tsv (apt by name, others as snap:NAME).
+_pkgsrc() { python3 -I $TERMINAL_SETUP/tmux/pkgsrc.py "$@" }
 
 # NAME or SOURCE:NAME → "source<TAB>name<TAB>version<TAB>description" lines where it is installed
 _installed_packages_find() {
@@ -483,8 +483,8 @@ _installed-packages() {
 }
 (( $+functions[compdef] )) && compdef _installed-packages installed-packages
 
-# tmux session manager (~/.tmux/terminal.zsh) · `terminal help`
-terminal() { ~/.tmux/terminal.zsh "$@" }
+# tmux session manager (tmux/terminal.zsh) · `terminal help`
+terminal() { $TERMINAL_SETUP/tmux/terminal.zsh "$@" }
 
 _terminal() {
   if (( CURRENT == 2 )); then
@@ -494,7 +494,7 @@ _terminal() {
       'help:show help')
     _describe command cmds
   elif (( CURRENT == 3 )) && [[ $words[2] == (open|o|kill|k|rename|mv) ]]; then
-    local -a sessions=(${(f)"$(~/.tmux/terminal.zsh _names)"})
+    local -a sessions=(${(f)"$($TERMINAL_SETUP/tmux/terminal.zsh _names)"})
     _describe session sessions
   elif (( CURRENT == 4 )) && [[ $words[2] == (open|o) ]]; then
     _directories

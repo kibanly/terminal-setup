@@ -11,7 +11,7 @@
 #  A package is "source:name" everywhere (@pkg-selected, row ids). Notes (why you
 #  installed it) stay in ~/.apt-notes.tsv: apt ones by name as before, the others
 #  as snap:name / brew:name.
-#  Also a command, for the `installed-packages` shell function (~/.zsh_functions):
+#  Also a command, for the `installed-packages` shell function (zsh/functions.zsh):
 #    pkgsrc.py mine [source]   the packages you installed: source name version description
 #    pkgsrc.py find NAME       NAME wherever it is installed (also as a dependency)
 #    pkgsrc.py sources         the sources there are

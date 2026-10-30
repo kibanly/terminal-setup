@@ -3,7 +3,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 # open a file, folder or URL with the desktop's app (Ubuntu's own `open` is openvt)
-open() { ~/.tmux/system/open.sh "${1:-.}" }
+open() { $TERMINAL_SETUP/tmux/system/open.sh "${1:-.}" }
 
 # pbcopy / pbpaste like on macOS, when a clipboard tool is there (Wayland, else X11)
 if (( $+commands[wl-copy] )); then

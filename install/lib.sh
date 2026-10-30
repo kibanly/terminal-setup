@@ -90,24 +90,3 @@ detect_platform() {
     HAS_DESKTOP=1
   fi
 }
-
-# ─── links into the repo, with a backup of whatever was there ───
-# link <file in the repo> <target>: an existing file / folder / other link goes to
-# $BACKUP_DIR (same path under it) and the target becomes a link to the repo.
-link() {
-  local src=$1 dst=$2 rel
-  if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$src" ]; then
-    ok "$(tilde "$dst") already links to the repo"
-    return
-  fi
-  if [ -e "$dst" ] || [ -L "$dst" ]; then
-    rel=${dst#"$HOME"/}
-    run mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-    run mv "$dst" "$BACKUP_DIR/$rel"
-    info "${D}saved your old $(tilde "$dst") in $(tilde "$BACKUP_DIR")${R}"
-    [ "${DRY_RUN:-0}" = 1 ] || printf '%s\n' "$rel" >> "$BACKUP_DIR/MANIFEST"
-  fi
-  run mkdir -p "$(dirname "$dst")"
-  run ln -s "$src" "$dst"
-  ok "$(tilde "$dst") → $(tilde "$src")"
-}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
-#  Ports pane of the `system` session (~/.tmux/system.sh)
+#  Ports pane of the `system` session (tmux/system.sh)
 #  Listening TCP / UDP ports from `ss -tulpnH` (macOS: lsof), refreshed every 2 s.
 #
 #  Double-click a TCP port: open http://localhost:PORT in the Windows browser.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 #  Session picker · Ctrl+a s, click on the session, `terminal`, new terminal tabs
-#  Opened by `~/.tmux/terminal.zsh pick`.
+#  Opened by `tmux/terminal.zsh pick`.
 #
 #  Mouse: hover highlights and previews · click opens · right-click: menu with
 #         open / rename / close (close asks first) / session tree · wheel scrolls
@@ -23,7 +23,7 @@ from tui import (BLUE, BOLD, CLEAR_EOL, CRUST, DANGER_BG, DIM, GREEN, ACCENT, RE
 ICON_TERM, ICON_SEARCH, ICON_NEW = "\U000F018D", "\U000F0349", "\U000F0415"
 ICON_EDIT, ICON_CLOSE, ICON_FOLDER, ICON_OPEN = "\U000F03EB", "\U000F0156", "\U000F024B", "\U000F0599"
 ICON_TREE, ICON_MONITOR, ICON_RESTART = "\U000F0645", "\U000F0430", "\U000F0450"
-MONITOR = "system"     # ~/.tmux/system.sh: always there, always first
+MONITOR = "system"     # tmux/system.sh: always there, always first
 DESCRIPTIONS = os.path.expanduser("~/.tmux/descriptions.tsv")   # session name → what it is for
 ICON_DESCRIBE = "\U000F0369"
 
@@ -333,7 +333,7 @@ class Picker:
             self.open(r[1])
 
     def restart_monitor(self):
-        subprocess.run([os.path.expanduser("~/.tmux/system.sh"), "restart"], capture_output=True)
+        subprocess.run([os.path.join(os.path.dirname(os.path.realpath(__file__)), "system.sh"), "restart"], capture_output=True)
         self.msg = f"{GREEN}system monitor rebuilt"
         self.refresh()
 

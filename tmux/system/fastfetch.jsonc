@@ -1,4 +1,4 @@
-// fastfetch layout for the Info pane of the `system` tmux session (~/.tmux/system/info.sh).
+// fastfetch layout for the Info pane of the `system` tmux session (tmux/system/info.sh).
 // Only what is useful in WSL, and disks limited to / and C: so lines stay short.
 {
   "modules": [

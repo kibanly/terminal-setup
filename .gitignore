@@ -1,4 +1,4 @@
-# ~/.tmux is a link to tmux/: what tmux and the plugins write there is not part of the setup
+# installs from before linked ~/.tmux to tmux/: what tmux and the plugins wrote there is not part of the setup
 # · tpm and the tmux plugins (install/plugins.lock says which)
 tmux/plugins/
 # · tmux-logging output and saved logs

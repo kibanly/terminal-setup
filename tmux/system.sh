@@ -16,12 +16,13 @@
 #  system.sh repair          the same, skipped if a build is already running (pane hooks)
 #  system.sh restart         close and rebuild it
 #
-#  New Windows Terminal tabs open it (~/.tmux/terminal.zsh autostart); the
+#  New Windows Terminal tabs open it (tmux/terminal.zsh autostart); the
 #  session-closed hook recreates it; it is left out of tmux-resurrect saves.
 # ═══════════════════════════════════════════════════════════════
 
+export TERMINAL_SETUP=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)   # the repo (this file is in its tmux/)
 S=system
-D=~/.tmux/system
+D=$TERMINAL_SETUP/tmux/system
 KEEP="$D/keep.sh"
 # Resources: header, CPU, RAM, swap, [GPU], WSL disk, C:, Net, Web
 RES_ROWS=8; { command -v nvidia-smi || [[ -x /usr/lib/wsl/lib/nvidia-smi ]]; } &>/dev/null && RES_ROWS=9
@@ -30,7 +31,7 @@ key=${sock//\//_}
 LOCK=${XDG_RUNTIME_DIR:-/tmp}/tmux-system-$UID${key:+-$key}.lock   # one lock per tmux server
 
 build() {
-  local py="python3 -I $HOME/.tmux" sh="${SHELL:-zsh}"
+  local py="python3 -I $TERMINAL_SETUP/tmux" sh="${SHELL:-zsh}"
   local info res btop procs ports pkgs updates search pkg cont det logs
   # 1 · info: fastfetch with Resources below it · btop on the right
   tmux ${NOSTART:+-N} new-session -d -s $S -n info -x 200 -y 50 -c "$HOME" "$KEEP $D/info.sh" || return
@@ -61,11 +62,11 @@ build() {
     tmux set -w -t "$S:${w%%:*}" automatic-rename off \; set -w -t "$S:${w%%:*}" @icon "${w#*:}"
   done
   # When the Info tab changes size (fullscreen, a client of another size…): keep Resources
-  # at its height and give btop the boxes that fit (~/.tmux/system/info-fit.sh)
+  # at its height and give btop the boxes that fit (tmux/system/info-fit.sh)
   tmux resize-pane -t "$res" -y $RES_ROWS \
      \; set-hook -w -t "$S:info" window-resized "run-shell -b '$D/info-fit.sh $res $btop $RES_ROWS'"
   "$D/info-fit.sh" "$res" "$btop" "$RES_ROWS"
-  # same for the docker tab: the Containers list keeps a useful height (~/.tmux/system/docker-fit.sh)
+  # same for the docker tab: the Containers list keeps a useful height (tmux/system/docker-fit.sh)
   tmux set-hook -w -t "$S:docker" window-resized "run-shell -b '$D/docker-fit.sh $cont'"
   "$D/docker-fit.sh" "$cont"
   tmux set -t "$S:" @description "System · info, processes & ports, packages, docker"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
-#  Processes pane of the `system` session (~/.tmux/system.sh)
+#  Processes pane of the `system` session (tmux/system.sh)
 #  Reads /proc every 2 s (macOS: ps). CPU% is per core, like top (100% = one full core).
 #
 #  Right-click a process: stop (SIGTERM) · force kill (SIGKILL), both ask first

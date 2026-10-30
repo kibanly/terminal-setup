@@ -73,7 +73,7 @@ cd ~/workspace/terminal-setup
 ./install.sh
 ```
 
-> El repo puede estar en cualquier carpeta. Si después lo mueves, vuelve a ejecutar `./install.sh` para que los enlaces apunten al sitio nuevo.
+> El repo puede estar en cualquier carpeta (sin espacios en la ruta). Si después lo mueves, vuelve a ejecutar `./install.sh` para que tus ficheros apunten al sitio nuevo.
 
 Al terminar, **abre una terminal nueva**.
 
@@ -140,10 +140,20 @@ En WSL, «abrir en el navegador» y `open` usan el navegador y el Explorador **d
 
 1. **Paquetes**: instala solo los que faltan (apt en Ubuntu/WSL, Homebrew en macOS), con la versión mínima que necesita la configuración (tmux ≥ 3.6, fzf ≥ 0.48…). Versiones en [`install/versions.sh`](install/versions.sh).
 2. **Fuente**: JetBrainsMono Nerd Font, donde corresponda (ver arriba).
-3. **Enlaces**: tu `~/.zshrc`, `~/.tmux.conf`, `~/.tmux`, etc. pasan a ser **enlaces a los ficheros del repo**. Lo que hubiera antes se guarda en `~/.terminal-setup-backup/<fecha>/`, y `./uninstall.sh` lo devuelve. Si ya tenías `~/.tmux`, tus logs, plugins y descripciones de sesión se conservan.
+3. **Configuración**: **no sustituye ni enlaza nada**. Añade unas líneas **al final** de tu `~/.zshrc` y de tu `~/.tmux.conf` (si no existen, los crea), entre dos marcas para que `./uninstall.sh` pueda quitarlas:
+   ```zsh
+   # >>> terminal-setup >>>  (./uninstall.sh takes it out)
+   source "/ruta/al/repo/zsh/zshrc"
+   # <<< terminal-setup <<<
+   ```
+   En `~/.tmux.conf` es lo mismo, con `source-file`. El resto de tus ficheros queda igual; por si acaso, guarda una copia de cómo estaban en `~/.terminal-setup-backup/<fecha>/`.
+   - Ese `source` carga también los alias y las funciones del repo: no hace falta nada más.
+   - `~/.tmux` sigue siendo una carpeta tuya: ahí van los plugins, los logs y las descripciones de sesión.
+   - El prompt usa el `starship.toml` del repo (variable `STARSHIP_CONFIG`). La config de btop y la de micro se copian solo si no tienes una.
+   - Si tienes una instalación anterior (con enlaces al repo), la convierte: tu `~/.zshrc.local` pasa a ser tu `~/.zshrc`, y `~/.tmux` vuelve a ser una carpeta con tus plugins y logs.
 4. **Plugins** de tmux y zsh, en las versiones probadas ([`install/plugins.lock`](install/plugins.lock)).
 5. **zsh como shell** de inicio (pregunta antes; en macOS ya lo es).
-6. **Comprobación**: [`install/doctor.sh`](install/doctor.sh) revisa versiones, enlaces, plugins y fuente.
+6. **Comprobación**: [`install/doctor.sh`](install/doctor.sh) revisa versiones, configuración, plugins y fuente.
 
 Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta.
 
@@ -151,7 +161,7 @@ Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta.
 |---|---|
 | `./install.sh --dry-run` | enseña lo que haría, sin cambiar nada |
 | `./install.sh --yes` | sin preguntas (por ejemplo, para scripts) |
-| `./install.sh --links-only` | solo los enlaces: ni paquetes, ni fuente, ni plugins |
+| `./install.sh --config-only` | solo la configuración: ni paquetes, ni fuente, ni plugins |
 | `bash install/doctor.sh` | comprobar la instalación en cualquier momento |
 
 **Qué se instala**
@@ -183,7 +193,7 @@ Abre una terminal nueva: tmux arranca solo y te lleva al **monitor del sistema**
 | una sesión nueva para un proyecto | `Ctrl+a s`, escribe el nombre, Enter, elige la carpeta |
 | pestaña nueva / dividir | `Ctrl+a c` · `Ctrl+a v` (al lado) · `Ctrl+a -` (debajo) |
 | volver al monitor | `Ctrl+a M` (o clic en CPU / RAM de la barra) |
-| una terminal sin tmux | `Ctrl+a d`: sales de tmux al shell normal y tmux sigue funcionando (vuelves con `terminal`). Para que no arranque nunca: `export TERMINAL_NO_AUTOSTART=1` en `~/.zshrc.local` |
+| una terminal sin tmux | `Ctrl+a d`: sales de tmux al shell normal y tmux sigue funcionando (vuelves con `terminal`). Para que no arranque nunca: `export TERMINAL_NO_AUTOSTART=1` en tu `~/.zshrc`, **antes** de la línea de terminal-setup |
 
 > **`Ctrl+a`** es el prefijo de tmux: pulsa `Ctrl+a`, suelta, y luego la tecla. Mientras está activo, la barra se pone roja y muestra «press a key».
 
@@ -191,11 +201,17 @@ Abre una terminal nueva: tmux arranca solo y te lleva al **monitor del sistema**
 
 ## Cambiar cosas
 
-Como `~/.zshrc`, `~/.tmux.conf` y `~/.tmux` son **enlaces al repo**, lo que edites ahí **ya está en el repo**: haz `git commit` y llévalo a tus otras máquinas con `git pull`.
+Hay dos sitios, según para quién sea el cambio:
 
-- **tmux** recarga la configuración solo al guardar `~/.tmux.conf` (o `Ctrl+a r`).
+- **Para todas tus máquinas**: edita los ficheros **del repo** (tabla de abajo), haz `git commit` y llévalo a las demás con `git pull`.
+- **Solo para esta máquina** (alias propios, rutas, nvm, pyenv…): en **tu `~/.zshrc`**, como siempre.
+  - Lo que pongas **antes** de la línea de terminal-setup se carga primero; por ejemplo, `export TERMINAL_NO_AUTOSTART=1` para que tmux no arranque solo.
+  - Lo que pongas **después** se carga al final y **gana** sobre el repo (por ejemplo, para redefinir un alias).
+  - En `~/.tmux.conf` funciona igual: lo que va después de la línea de terminal-setup gana.
+
+Para aplicar los cambios:
+- **tmux** recarga la configuración solo al guardar `~/.tmux.conf` o `tmux/tmux.conf` (o con `Ctrl+a r`).
 - **zsh**: abre una terminal nueva o ejecuta `exec zsh`.
-- **Solo para esta máquina** (alias propios, rutas, `TERMINAL_NO_AUTOSTART`…): crea `~/.zshrc.local`. Se carga al final y no está en el repo.
 
 | Quiero cambiar… | Fichero |
 |---|---|
@@ -226,7 +242,9 @@ update            # paquetes del sistema y plugins a su última versión
 cd ~/workspace/terminal-setup && ./uninstall.sh
 ```
 
-Quita los enlaces y **devuelve tus ficheros anteriores** desde la última copia en `~/.terminal-setup-backup/` (o la que le indiques: `./uninstall.sh ~/.terminal-setup-backup/<fecha>`). Los paquetes, la fuente y los plugins **se quedan instalados**, porque otras cosas pueden usarlos.
+Quita **solo las líneas de terminal-setup** de `~/.zshrc` y `~/.tmux.conf`; el resto de esos ficheros queda igual (si solo tenían esas líneas, los borra). También quita las configs de btop y micro que copió, si no las has cambiado.
+
+Los paquetes, la fuente y los plugins **se quedan instalados**, porque otras cosas pueden usarlos. `~/.tmux` también se queda, porque ahí están tus logs.
 
 ---
 
@@ -236,34 +254,35 @@ Quita los enlaces y **devuelve tus ficheros anteriores** desde la última copia 
 terminal-setup/
 ├── install.sh / uninstall.sh       instalar / deshacer
 ├── install/
-│   ├── lib.sh                      funciones comunes (detectar el sistema, enlaces, copias)
+│   ├── lib.sh                      funciones comunes (detectar el sistema, preguntar, versiones)
 │   ├── versions.sh                 versiones mínimas y las que se descargan
 │   ├── apt.sh                      Ubuntu / WSL
 │   ├── tmux-build.sh               compila tmux (Ubuntu 24.04)
 │   ├── brew.sh · Brewfile          macOS
 │   ├── fonts.sh                    JetBrainsMono Nerd Font
+│   ├── config.sh                   las líneas en ~/.zshrc y ~/.tmux.conf
 │   ├── plugins.sh · plugins.lock   plugins en sus versiones probadas
 │   └── doctor.sh                   comprobación
 ├── zsh/
-│   ├── zshrc                       → ~/.zshrc
-│   ├── aliases.zsh                 → ~/.zsh_aliases
-│   ├── functions.zsh               → ~/.zsh_functions
+│   ├── zshrc                       lo carga tu ~/.zshrc
+│   ├── aliases.zsh                 alias (los carga zshrc)
+│   ├── functions.zsh               funciones (las carga zshrc)
 │   └── platform/                   lo propio de linux / wsl / macos
-├── tmux/                           → ~/.tmux
-│   ├── tmux.conf                   → ~/.tmux.conf
+├── tmux/
+│   ├── tmux.conf                   lo carga tu ~/.tmux.conf
 │   ├── terminal.zsh                gestor de sesiones (comando `terminal`, selector)
 │   ├── guide.zsh · quick-menu.zsh  guía (Ctrl+a ?) y menú rápido (Ctrl+a Space)
 │   ├── system.sh                   construye el monitor (sesión `system`)
 │   ├── *.py                        los paneles del monitor
 │   └── system/                     scripts del monitor (info, recursos, btop, abrir URLs…)
 ├── config/
-│   ├── starship.toml               → ~/.config/starship.toml
-│   ├── btop/btop.conf              → ~/.config/btop/btop.conf
-│   └── micro/settings.json         → ~/.config/micro/settings.json
+│   ├── starship.toml               el prompt (STARSHIP_CONFIG)
+│   ├── btop/btop.conf              el btop del monitor (copiado a ~/.config/btop si no tienes)
+│   └── micro/settings.json         copiado a ~/.config/micro si no tienes
 └── windows/windows-terminal.md     WSL: fuente y perfil de Windows Terminal
 ```
 
-**No van al repo** (son de cada máquina): los plugins descargados, los logs de tmux (`~/.tmux/logs`), las descripciones de sesión (`~/.tmux/descriptions.tsv`), los guardados de sesiones de tmux-resurrect, tus notas de paquetes (`~/.apt-notes.tsv`) y `~/.zshrc.local`.
+**No van al repo** (son de cada máquina y viven en tu home): tu `~/.zshrc` y `~/.tmux.conf`, los plugins (`~/.tmux/plugins`), los logs de tmux (`~/.tmux/logs`), las descripciones de sesión (`~/.tmux/descriptions.tsv`), los guardados de tmux-resurrect y tus notas de paquetes (`~/.apt-notes.tsv`).
 
 ---
 

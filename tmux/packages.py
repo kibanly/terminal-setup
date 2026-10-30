@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
-#  Packages tab of the `system` session (~/.tmux/system.sh)
-#  The packages you installed yourself, from every source there is (~/.tmux/pkgsrc.py):
+#  Packages tab of the `system` session (tmux/system.sh)
+#  The packages you installed yourself, from every source there is (tmux/pkgsrc.py):
 #    apt   manual packages minus the base WSL image (~/.apt-base.txt), like the
 #          `installed-packages` shell function
 #    snap  installed apps (not bases, snapd or content snaps that came as dependencies)

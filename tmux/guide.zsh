@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════
 #  tmux guide · every shortcut in one list
 #  Opened with Ctrl+a ? (or Ctrl+a g) inside tmux, or `terminal guide`.
-#  Shown by ~/.tmux/guide.py: hover highlights · click or Enter runs ·
+#  Shown by tmux/guide.py: hover highlights · click or Enter runs ·
 #  wheel scrolls · type to search · Esc closes.
 #
 #  This file is the single source of truth for the shortcuts cheat sheet.
@@ -14,6 +14,7 @@
 # ═══════════════════════════════════════════════════════════════
 
 emulate -L zsh
+export TERMINAL_SETUP=${0:A:h:h}            # the repo (this file is in its tmux/)
 
 B=$'\e[1m' D=$'\e[2m' C=$'\e[36m' G=$'\e[32m' Y=$'\e[33m' M=$'\e[35m' X=$'\e[0m'
 TAB=$'\t'
@@ -146,14 +147,14 @@ type|Filter the list · Esc clears it|
 @Sessions|the terminal command
 terminal|Session picker|@picker
 terminal system|System monitor · also opens in every new Windows Terminal tab|@keys:M
-terminal system restart|Rebuild the system monitor|run-shell -b "~/.tmux/system.sh restart"
+terminal system restart|Rebuild the system monitor|run-shell -b "$TERMINAL_SETUP/tmux/system.sh restart"
 terminal open api ~/dir|Open a session, or create it in that folder (default: here)|
-terminal list|List the sessions|@shell:~/.tmux/terminal.zsh list; read -sk "?press any key"
+terminal list|List the sessions|@shell:$TERMINAL_SETUP/tmux/terminal.zsh list; read -sk "?press any key"
 terminal rename old new|Rename a session|
 terminal kill name|Close a session · asks first (system: restarts it)|
 terminal kill-all|Close every session but the system monitor · asks first, and saves so they stay closed|
 terminal guide|This guide|
-terminal help|Every command|@shell:~/.tmux/terminal.zsh help; read -sk "?press any key"
+terminal help|Every command|@shell:$TERMINAL_SETUP/tmux/terminal.zsh help; read -sk "?press any key"
 @Settings|in ~/.zshenv
 export TERMINAL_NO_AUTOSTART=1|Do not open tmux in new tabs|
 EOF
@@ -176,9 +177,9 @@ render() {
 }
 
 # ─────────────── Viewer ───────────────
-# ~/.tmux/guide.py shows every entry in one list: hover, click to run, wheel
+# tmux/guide.py shows every entry in one list: hover, click to run, wheel
 # scrolls, type to search. The fzf search below is only the fallback without python3.
-[[ $1 != search ]] && (( $+commands[python3] )) && exec python3 -I ~/.tmux/guide.py
+[[ $1 != search ]] && (( $+commands[python3] )) && exec python3 -I $TERMINAL_SETUP/tmux/guide.py
 
 
 # ─────────────── Search (fzf) ───────────────
@@ -190,7 +191,7 @@ run() {
     print -r -- "${D}Open tmux (${X}${C}terminal${X}${D}) to run actions from the guide.${X}"; return
   fi
   case $cmd in
-    @picker)  exec ~/.tmux/terminal.zsh pick ;;
+    @picker)  exec $TERMINAL_SETUP/tmux/terminal.zsh pick ;;
     @shell:*) eval "${cmd#@shell:}" ;;
     @menu)    # replay Ctrl+a Space on this client once the popup is gone
               tmux run-shell -b -d 0.1 -C "send-keys -K -c '$(tmux display -p '#{client_name}')' C-a Space" ;;

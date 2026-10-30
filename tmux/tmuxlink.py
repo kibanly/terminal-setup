@@ -105,9 +105,9 @@ def free_select():
     tmux("display-message", "drag over the text to copy it · q or Esc to leave")
 
 
-# ~/.tmux/system/open.sh opens it with the desktop's browser of each system (Windows' one in
+# tmux/system/open.sh opens it with the desktop's browser of each system (Windows' one in
 # WSL, `open` on macOS, xdg-open on Linux). TMUX_OPEN_URL replaces it (tests).
-BROWSER = os.environ.get("TMUX_OPEN_URL") or os.path.expanduser("~/.tmux/system/open.sh")
+BROWSER = os.environ.get("TMUX_OPEN_URL") or os.path.join(os.path.dirname(os.path.realpath(__file__)), "system", "open.sh")
 
 
 def open_url(url):

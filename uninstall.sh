@@ -1,59 +1,80 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════
 #  terminal-setup · undo the install
-#    ./uninstall.sh            removes the links into this repo and puts back what
-#                              was there before (the newest ~/.terminal-setup-backup/…)
-#    ./uninstall.sh <backup>   puts back that backup instead
-#  Packages, the font and the plugins stay installed (other things may use them).
-#  Your data inside the linked ~/.tmux (logs, session descriptions) is copied into
-#  the ~/.tmux that comes back, so nothing is lost.
+#    ./uninstall.sh         takes the terminal-setup lines out of ~/.zshrc and ~/.tmux.conf
+#                           (the rest of those files stays as it is)
+#    ./uninstall.sh --yes   no questions
+#  Packages, the font and the plugins stay installed (other things may use them), and
+#  ~/.tmux too (your logs and session descriptions are there). The btop and micro
+#  settings the install copied go, if you did not change them.
+#  An install from before (links into the repo) is undone too: the links go and the
+#  files from before it come back from ~/.terminal-setup-backup/.
 # ═══════════════════════════════════════════════════════════════
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 . "$REPO/install/lib.sh"
-ASSUME_YES=0
-
-BACKUP=${1:-$(ls -d "$HOME"/.terminal-setup-backup/*/ 2>/dev/null | sort | tail -1)}
-BACKUP=${BACKUP%/}
+ASSUME_YES=0 DRY_RUN=0
+case ${1:-} in -y|--yes) ASSUME_YES=1 ;; "") ;; *) die "unknown option: $1 (./uninstall.sh [--yes])" ;; esac
+BACKUP_DIR="$HOME/.terminal-setup-backup/$(date +%Y%m%d-%H%M%S)"
+. "$REPO/install/config.sh"
 
 printf '\n%sterminal-setup · uninstall%s\n' "$B" "$R"
 step "Plan"
-links=""
-for f in .zshrc .zsh_aliases .zsh_functions .tmux .tmux.conf .config/starship.toml .config/btop/btop.conf \
-         .config/micro/settings.json; do
-  case $(readlink "$HOME/$f" 2>/dev/null || true) in "$REPO"/*) links="$links $f" ;; esac
-done
-[ -n "$links" ] && info "remove the links:$(printf ' ~/%s' $links)" || ok "no links into this repo"
-if [ -n "$BACKUP" ] && [ -f "$BACKUP/MANIFEST" ]; then
-  info "put back from $(tilde "$BACKUP"): $(tr '\n' ' ' < "$BACKUP/MANIFEST")"
-else
-  warn "no backup to put back: you will have no ~/.zshrc, ~/.tmux.conf… until you make new ones"
-fi
+blocks="" copies="" links=$(links_into_repo)
+for f in .zshrc .tmux.conf; do has_block "$HOME/$f" && blocks="$blocks $f"; done
+while read -r src dst; do
+  [ -n "$src" ] && [ ! -L "$HOME/$dst" ] && cmp -s "$REPO/$src" "$HOME/$dst" && copies="$copies $dst"
+done <<< "$COPIES"
+[ -n "$blocks" ] && info "take the terminal-setup lines out of:$(printf ' ~/%s' $blocks)"
+[ -n "$copies" ] && info "remove the copied settings:$(printf ' ~/%s' $copies)"
+[ -n "$links" ]  && info "remove the links into the repo: $(printf '~/%s ' $links)"
+[ -z "$blocks$copies$links" ] && { ok "terminal-setup is not set up here: nothing to do"; exit 0; }
 ask "Go ahead?" || { info "nothing changed"; exit 0; }
 
 step "Uninstall"
-for f in $links; do
-  rm "$HOME/$f"
-  ok "removed ~/$f"
+for f in $blocks; do
+  backup_copy "$HOME/$f"
+  without_block "$HOME/$f" > "$HOME/$f.tmp"
+  if [ -s "$HOME/$f.tmp" ]; then
+    cat "$HOME/$f.tmp" > "$HOME/$f"; ok "~/$f: terminal-setup lines taken out"
+  else
+    rm "$HOME/$f"; ok "~/$f removed (it only had the terminal-setup lines)"
+  fi
+  rm -f "$HOME/$f.tmp"
 done
-if [ -n "$BACKUP" ] && [ -f "$BACKUP/MANIFEST" ]; then
-  while read -r rel; do
-    [ -e "$BACKUP/$rel" ] || [ -L "$BACKUP/$rel" ] || continue
-    if [ -e "$HOME/$rel" ] || [ -L "$HOME/$rel" ]; then
-      warn "~/$rel exists now: left as is (the old one stays in the backup)"
-      continue
+for f in $copies; do rm "$HOME/$f"; ok "removed ~/$f"; done
+
+# ─── an install from before: links into the repo, the old files in a backup ───
+if [ -n "$links" ]; then
+  for f in $links; do
+    if [ "$f" = .tmux ]; then              # what tmux wrote there comes along
+      rm "$HOME/.tmux"; mkdir -p "$HOME/.tmux"
+      for item in plugins logs resurrect descriptions.tsv; do
+        [ -e "$REPO/tmux/$item" ] && mv "$REPO/tmux/$item" "$HOME/.tmux/"
+      done
+    else
+      rm "$HOME/$f"
     fi
-    mkdir -p "$(dirname "$HOME/$rel")"
-    mv "$BACKUP/$rel" "$HOME/$rel"
-    ok "put back ~/$rel"
-  done < "$BACKUP/MANIFEST"
-fi
-# logs and session descriptions written while the setup was installed
-if [ -d "$HOME/.tmux" ] && [ ! -L "$HOME/.tmux" ]; then
-  for item in logs descriptions.tsv; do
-    [ -e "$REPO/tmux/$item" ] && cp -R "$REPO/tmux/$item" "$HOME/.tmux/" && ok "kept ~/.tmux/$item"
+    ok "removed the link ~/$f"
   done
+  old=$(ls -d "$HOME"/.terminal-setup-backup/*/ 2>/dev/null | sort | tail -1); old=${old%/}
+  if [ -n "$old" ] && [ -f "$old/MANIFEST" ]; then
+    while read -r rel; do
+      [ -e "$old/$rel" ] || [ -L "$old/$rel" ] || continue
+      if [ "$rel" = .tmux ] && [ -d "$HOME/.tmux" ]; then
+        cp -Rn "$old/.tmux/." "$HOME/.tmux/" && ok "put back ~/.tmux (with what tmux wrote since)"; continue
+      fi
+      if [ -e "$HOME/$rel" ] || [ -L "$HOME/$rel" ]; then
+        warn "~/$rel exists now: left as is (the old one stays in $(tilde "$old"))"; continue
+      fi
+      mkdir -p "$(dirname "$HOME/$rel")"
+      mv "$old/$rel" "$HOME/$rel"
+      ok "put back ~/$rel"
+    done < "$old/MANIFEST"
+  fi
 fi
+
 tmux info >/dev/null 2>&1 && [ -f "$HOME/.tmux.conf" ] && tmux source-file "$HOME/.tmux.conf" >/dev/null 2>&1 || true
-printf '\n    Done. Open a new terminal to use the previous config.\n\n'
+[ -d "$BACKUP_DIR" ] && printf '\n    A copy of your files as they were: %s\n' "$(tilde "$BACKUP_DIR")"
+printf '\n    Done. Open a new terminal (a running tmux keeps the old key bindings until it restarts).\n\n'

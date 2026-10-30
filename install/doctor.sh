@@ -54,15 +54,16 @@ if [ "$OS" = macos ]; then
   else fail "tmux-256color is unknown to macOS (run ./install.sh)"; problems=$((problems + 1)); fi
 fi
 
-printf '\n  %sLinks%s\n' "$B" "$R"
-for f in .zshrc .zsh_aliases .zsh_functions .tmux .tmux.conf .config/starship.toml .config/btop/btop.conf \
-         .config/micro/settings.json; do
-  target=$(readlink "$HOME/$f" 2>/dev/null || true)
-  case $target in
-    "$REPO"/*) ok "~/$f" ;;
-    "") fail "~/$f is not a link to the repo (run ./install.sh)"; problems=$((problems + 1)) ;;
-    *)  fail "~/$f links somewhere else: $target"; problems=$((problems + 1)) ;;
-  esac
+printf '\n  %sConfig%s\n' "$B" "$R"
+. "$REPO/install/config.sh"
+for f in .zshrc .tmux.conf; do
+  case $f in .zshrc) want=$(block_zsh) ;; *) want=$(block_tmux) ;; esac
+  if has_block "$HOME/$f" && [ "$(block_in "$HOME/$f")" = "$want" ]; then ok "~/$f loads terminal-setup"
+  elif has_block "$HOME/$f"; then fail "~/$f loads terminal-setup from another folder (run ./install.sh)"; problems=$((problems + 1))
+  else fail "~/$f does not load terminal-setup (run ./install.sh)"; problems=$((problems + 1)); fi
+done
+for f in $(links_into_repo); do
+  fail "~/$f is still a link into the repo, from an older install (run ./install.sh)"; problems=$((problems + 1))
 done
 
 printf '\n  %sPlugins%s\n' "$B" "$R"
