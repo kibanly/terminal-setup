@@ -217,6 +217,7 @@ class LinkedProcs(Procs):
             if q:
                 tmux("set", "-gu", "@procs-query")
                 self.query = q
+                self.query_changed()
         super().dispatch(ev)
 
 

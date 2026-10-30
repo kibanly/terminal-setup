@@ -8,7 +8,8 @@
 #         · right-click: copy this line / the selection / everything shown
 #           / select text freely (tmux copy mode: any characters, only in this pane)
 #         · 󰊓 zoom on the title row (or double-click the title) · 󰊔 restore
-#  Keys:  Tab / ← → switch tab · ↑↓ PgUp PgDn Home End scroll · End follows the end
+#  Keys:  Tab / Shift+Tab / ← → switch tab · ↑↓ PgUp PgDn Home End scroll · End follows the end
+#         · Enter opens the same menu as a right-click (copy, zoom…) · Esc drops a selection
 # ═══════════════════════════════════════════════════════════════
 
 import os
@@ -136,7 +137,10 @@ class Viewer:
         # second row: a fresh message, else what this pane is doing, then a rule
         text, at = self.note
         extra = f"{GREEN}{text}" if text and time.monotonic() - at < 4 else self.status()
-        rule = (f" {extra}{RESET} {DIM}" + "─" * max(0, w - vlen(extra) - 2)) if extra else DIM + "─" * w
+        hint = f" menu: enter or right-click{' · tabs: ← →' if len(self.tabs) > 1 else ''} "
+        lead = f" {extra}{RESET} " if extra else ""
+        fill = w - vlen(lead) - len(hint)
+        rule = (lead + DIM + "─" * fill + hint) if fill >= 4 else (lead + DIM + "─" * max(0, w - vlen(lead)))
         lines = [cut(head, w), cut(rule, w)]
         bar = len(self.lines) > self.body_h
         if bar:
@@ -231,7 +235,7 @@ class Viewer:
     def on_key(self, name):
         if name in ("tab", "right"):
             self.switch(self.tab + 1)
-        elif name == "left":
+        elif name in ("btab", "left"):
             self.switch(self.tab - 1)
         elif name in ("up", "down"):
             self.scroll(-1 if name == "up" else 1)
@@ -243,6 +247,9 @@ class Viewer:
             self.top, self.following = self.max_top, self.follow_end
         elif name == "esc":
             self.sel = None
+        elif name == "enter":
+            self.open_menu(4, TOP)
+            self.menu.select_first()
         elif name in ("ctrl-c", "ctrl-d"):
             raise SystemExit
 
@@ -256,6 +263,9 @@ class Viewer:
             return
         if b in (64, 65):
             self.scroll(-WHEEL_STEP if b == 64 else WHEEL_STEP)
+            return
+        if getattr(self, "prompt", None) and b in (0, 2) and not released:
+            self.prompt = None                       # clicking away cancels a question (like the lists)
             return
         if b & 32:                                   # motion
             tmuxlink.pointer_here()
@@ -314,6 +324,7 @@ def run(viewer_class):
     try:
         with Screen() as screen:
             v = viewer_class(screen)
+            v._size = screen.size()
             v.draw()
             for ev in screen.events(tick=v.interval):
                 if ev[0] == "tick":
@@ -331,7 +342,11 @@ def run(viewer_class):
                 elif ev[0] == "char":
                     v.on_char(ev[1])
                 elif ev[0] == "resize":
-                    v.menu = None
+                    # background work (a whole-log read, a save) also wakes the pane this way:
+                    # only a real change of size closes an open menu
+                    size = screen.size()
+                    if size != getattr(v, "_size", None):
+                        v._size, v.menu = size, None
                     v.zoomed = tmuxlink.pane_state("")[0]   # zoom / restore resize the pane
                 v.draw()
     except SystemExit as e:

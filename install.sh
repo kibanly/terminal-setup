@@ -121,9 +121,10 @@ fi
 # a running tmux picks up the new config
 if [ "$DRY_RUN" = 0 ] && tmux info >/dev/null 2>&1; then
   tmux source-file "$HOME/.tmux.conf" >/dev/null 2>&1 && ok "the running tmux reloaded its config"
-  # its monitor still runs the scripts from where the old links pointed: build it again
-  if [ "${MIGRATED:-0}" = 1 ] && tmux has-session -t system 2>/dev/null; then
-    "$REPO/tmux/system.sh" restart >/dev/null 2>&1 && ok "system monitor rebuilt"
+  # its monitor still runs the code it started with (or, after a migration, the scripts where
+  # the old links pointed): build it again, on the tab you were on
+  if tmux has-session -t system 2>/dev/null; then
+    "$REPO/tmux/system.sh" restart >/dev/null 2>&1 && ok "system monitor rebuilt with this version"
   fi
 fi
 

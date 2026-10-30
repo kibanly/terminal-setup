@@ -7,7 +7,10 @@
 #         · 󰊓 zoom on the title row (or double-click the title) · 󰊔 restore
 #  Narrow panes: columns shrink to their minimum and optional ones hide, so a row
 #  never runs off the right edge.
-#  Keys:  type to filter · ↑↓ PgUp PgDn move · Enter opens the row menu
+#         · ✕ after the filter clears it (a filter can come from another pane)
+#  Keys:  type to filter · ↑↓ PgUp PgDn Home End move · Enter opens the row menu
+#         · ← → sort by the previous / next column · Ctrl+r reverses the order
+#         · Tab / Shift+Tab: the next / previous source chip (all · apt · snap · brew)
 #         · Del asks to stop it · Esc clears the filter · Ctrl+c quits
 #  Rows refresh every few seconds; the highlighted row is followed by its id,
 #  and refreshing pauses while a menu or a question is open.
@@ -75,6 +78,10 @@ class TableApp:
     def on_delete(self, row):
         pass
 
+    def order(self, rows):
+        """Last word on the order, after the column sort (e.g. groups that always go last)."""
+        return rows
+
     def keep(self, row):
         """False hides the row (a filter of the pane's own, e.g. by source)."""
         return True
@@ -127,6 +134,8 @@ class TableApp:
         self._last_size = screen.size()
         self.sel_id = None
         self.hover_at = 0.0
+        self.touched = False     # the highlight was moved by hand (keys, pointer)
+        self.jump = False        # the filter changed: back to the first row
         # sort_key may also be a hidden field (e.g. Docker's running-first order)
         col = next((c for c in self.columns if self.sort_key in (c.key, c.sort)), None)
         if col:
@@ -151,12 +160,21 @@ class TableApp:
         rows.sort(key=lambda r: (r.get(self.sort_key) is None, r.get(self.sort_key)), reverse=self.sort_desc)
         if self.sort_desc:   # keep empty values last when reversing
             rows.sort(key=lambda r: r.get(self.sort_key) is None)
-        self.rows = rows
+        self.rows = rows = self.order(rows)
         ids = [r["id"] for r in rows]
-        if self.cur_id not in ids:
+        # a new filter starts on its first match; a list nobody moved in stays on its top row
+        # (Processes re-sorts every refresh) · a master's selection is kept, the detail panes show it
+        if self.cur_id not in ids or self.jump or not (self.touched or self.master):
             self.cur_id = ids[0] if ids else None
+        if self.jump and self.master:
+            self.sel_id = self.cur_id
+        self.jump = False
         if getattr(self, "sel_id", None) not in ids:      # the selection disappeared (filter, removed)
             self.sel_id = self.cur_id
+
+    def query_changed(self):
+        """The filter text changed (typed, cleared, or sent by another pane)."""
+        self.jump, self.top, self.msg = True, 0, ""
 
     def cur_index(self):
         for i, r in enumerate(self.rows):
@@ -231,7 +249,8 @@ class TableApp:
             self.selected(next((r for r in self.rows if r["id"] == shown), None))
         self.buttons = {}
         w = self.w
-        filt = f"{DIM}filter ❯ {RESET}{TEXT}{self.query}{RESET}{YELLOW}▏"
+        filt = (f"{DIM}{'search' if self.remote_query else 'filter'} ❯ {RESET}{TEXT}{self.query}{RESET}{YELLOW}▏"
+                + (f"{RESET} {SURFACE}{SUB} ✕ {RESET}" if self.query else ""))
         extra = self.summary()
         zb_len = 11
         # title row by priority: title + count + filter + zoom always; the noun, the summary
@@ -245,6 +264,8 @@ class TableApp:
                     + (f" {DIM}·{RESET} {extra}{RESET}" if (extra and parts[1]) else "") + f"   {filt}")
             if vlen(head) + zb_len <= w:
                 break
+        if self.query and vlen(head) + zb_len <= w:     # the ✕ that clears the filter
+            self.buttons["clear"] = (1, vlen(head) - 2, vlen(head))
         if chips and parts[2]:                           # where each chip landed, for clicks
             x = vlen(lead) + 1
             for name, label, _ in chips:
@@ -252,7 +273,7 @@ class TableApp:
                 x += len(label) + 3
         zoomed = getattr(self, "zoomed", False)
         zb = f" {ICON_UNZOOM} restore " if zoomed else f" {ICON_ZOOM} zoom "
-        hint = "right-click a row · click a title to sort  "
+        hint = "menu: enter or right-click · sort: ← → or click a title  "
         room = w - vlen(head) - len(zb)
         tail = (RESET + " " * (room - len(hint)) + DIM + hint) if room > len(hint) + 1 else ""
         self.zoom_span = (w - len(zb) + 1, w)
@@ -464,21 +485,37 @@ class TableApp:
             self.on_key(ev[1])
         elif kind == "char":
             self.query += ev[1]
-            self.msg = ""
+            self.query_changed()
             self.reload() if self.remote_query else self.apply()
-            self.top = 0
+
+    def set_query(self, text):
+        if text != self.query:
+            self.query = text
+            self.query_changed()
+            self.reload() if self.remote_query else self.apply()
+        self.msg = ""
+
+    def sort_by(self, col):
+        """Sort by a column (its own direction first) · the same one again reverses."""
+        if col.sort == self.sort_key:
+            self.sort_desc = not self.sort_desc
+        else:
+            self.sort_key, self.sort_desc = col.sort, col.desc
+        self.apply()
+
+    def next_chip(self, step):
+        chips = self.chips()
+        if chips:
+            at = next((n for n, (_, _, on) in enumerate(chips) if on), 0)
+            self.on_chip(chips[(at + step) % len(chips)][0])
 
     def on_key(self, name):
-        refilter = self.reload if self.remote_query else self.apply
         if name == "esc":
-            self.query, self.msg = "", ""
-            refilter()
+            self.set_query("")
         elif name == "backspace":
-            self.query = self.query[:-1]
-            refilter()
+            self.set_query(self.query[:-1])
         elif name == "ctrl-u":
-            self.query = ""
-            refilter()
+            self.set_query("")
         elif name in ("ctrl-c", "ctrl-d"):
             raise SystemExit
         elif name in ("up", "down", "pgup", "pgdn", "home", "end"):
@@ -487,11 +524,27 @@ class TableApp:
                     "home": -len(self.rows), "end": len(self.rows)}[name]
             if self.rows:
                 self.cur_id = self.sel_id = self.rows[max(0, min(len(self.rows) - 1, i + step))]["id"]
+                self.touched = True
                 self.ensure_visible()
+        elif name in ("left", "right"):                  # sort by the previous / next column
+            cols = getattr(self, "visible", None) or self.columns
+            at = next((n for n, c in enumerate(cols) if c.sort == self.sort_key), -1)
+            c = cols[(at + (1 if name == "right" else -1)) % len(cols)]
+            self.sort_key, self.sort_desc = c.sort, c.desc
+            self.apply()
+            self.ensure_visible()
+        elif name == "ctrl-r":
+            self.sort_desc = not self.sort_desc
+            self.apply()
+            self.ensure_visible()
+        elif name in ("tab", "btab"):
+            self.next_chip(1 if name == "tab" else -1)
         elif name == "enter":
             r = self.current()
             i = self.cur_index()
             self.open_menu(r, 4, (TOP + i - self.top + 1) if r is not None else TOP)
+            if self.menu:
+                self.menu.select_first()
         elif name == "delete":
             r = self.current()
             if r is not None:
@@ -509,7 +562,7 @@ class TableApp:
             if r is None:
                 self.hover_at = 0.0                      # over the titles / empty space: no dwell
             elif r["id"] != self.cur_id:
-                self.cur_id = r["id"]
+                self.cur_id, self.touched = r["id"], True
                 self.hover_at = time.monotonic()
                 if self.master:
                     tmuxlink.pointer_here(force=True)    # a new row: say so right away
@@ -518,6 +571,9 @@ class TableApp:
             return
         if y == 1 and b == 0 and (self.hit(x, y) or "").startswith("chip:"):
             self.on_chip(self.hit(x, y)[5:])
+            return
+        if y == 1 and b == 0 and self.hit(x, y) == "clear":
+            self.set_query("")
             return
         if y == 1 and b == 0:
             a, z = getattr(self, "zoom_span", (0, -1))
@@ -530,12 +586,7 @@ class TableApp:
             return
         col = self.col_at(x, y)
         if b == 0 and col:
-            c = next(c for c in self.columns if c.key == col)
-            if c.sort == self.sort_key:
-                self.sort_desc = not self.sort_desc
-            else:
-                self.sort_key, self.sort_desc = c.sort, c.desc
-            self.apply()
+            self.sort_by(next(c for c in self.columns if c.key == col))
             return
         r = self.row_at(y)
         if r is None:
@@ -543,6 +594,7 @@ class TableApp:
                 self.open_menu(None, x, y)
             return
         self.cur_id = self.sel_id = r["id"]
+        self.touched = True
         if b == 2:
             self.open_menu(r, x, y)
         elif b == 0:                                     # a second click on the same row = double-click

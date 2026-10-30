@@ -3,7 +3,8 @@
 # offers to start it again instead of leaving a hole in the layout.
 while :; do
   "$@"
-  printf '\n\e[38;2;108;112;134m  %s closed · Enter starts it again · Ctrl+a x closes this pane\e[0m' "${1##*/}"
+  name=${*: -1}; name=${name##*/}         # the program: python3 -I …/procs.py → procs.py
+  printf '\n\e[38;2;108;112;134m  %s closed · Enter starts it again\e[0m' "$name"
   read -rs
   clear
 done

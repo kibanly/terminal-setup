@@ -7,7 +7,7 @@
 #  Sessions are created by hand: no project scanning.
 #
 #  Config (env vars):
-#    TERMINAL_NO_AUTOSTART=1  do not open tmux in new tabs (set it in ~/.zshenv)
+#    TERMINAL_NO_AUTOSTART=1  do not open tmux in new tabs (in ~/.zshrc, above the terminal-setup line)
 # ═══════════════════════════════════════════════════════════════
 
 emulate -L zsh
@@ -252,13 +252,14 @@ help() {
     ${Y}terminal system${X}                system monitor ${D}(info · processes & ports · packages · docker · opens in new tabs)${X}
     ${Y}terminal system restart${X}        rebuild the system monitor
     ${Y}terminal guide${X}                 tmux guide ${D}(same as Ctrl+a ? inside tmux)${X}
+    ${Y}terminal files${X}                 every file the install put on this machine, and what it is for
     ${Y}terminal help${X}                  this panel
 
   ${B}SESSIONS${X}  ${D}(${G}●${D} attached · ${M}▶${D} current)${X}
 $(list)
 
   ${D}Inside tmux: ${X}${C}Ctrl+a Space${X}${D} quick menu · ${X}${C}Ctrl+a ?${X}${D} guide · ${X}${C}Ctrl+a s${X}${D} this picker${X}
-  ${D}Disable auto-start: add ${X}export TERMINAL_NO_AUTOSTART=1${D} to ~/.zshenv${X}
+  ${D}Disable auto-start: add ${X}export TERMINAL_NO_AUTOSTART=1${D} to ~/.zshrc, above the terminal-setup line${X}
 
 EOF
 }
@@ -296,13 +297,14 @@ case "$1" in
                     ok "${#all} sessions closed · saved, so they do not come back on the next start"
                     if (( ${all[(Ie)$here]} )); then
                       # this shell dies with its session: tmux closes it (and saves) once we are gone
-                      tmux run-shell -b "tmux kill-session -t '=$here'; $save quiet"
+                      tmux run-shell -b "tmux kill-session -t '=$here'; TERMINAL_SAVE_EMPTY=1 $save quiet"
                     else
-                      $save quiet 2>/dev/null
+                      TERMINAL_SAVE_EMPTY=1 $save quiet 2>/dev/null     # an empty save is meant here
                     fi ;;
   rename|mv)        [[ -z $3 ]] && { fail "usage: terminal rename <old> <new>"; exit 1 }
                     rename "$2" "$3" ;;
   guide|g)          exec $TERMINAL_SETUP/tmux/guide.zsh ;;
+  files|f)          exec bash $TERMINAL_SETUP/install/files.sh ;;
   system|sys)       exec $TERMINAL_SETUP/tmux/system.sh ${2:-open} ;;
   help|h|-h|--help) help ;;
   _preview)         preview "$2" "$3" ;;

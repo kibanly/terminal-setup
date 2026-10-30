@@ -44,11 +44,11 @@ Funciona en **Ubuntu 26.04**, **Ubuntu 24.04**, **WSL** (Ubuntu dentro de Window
 
 **tmux** (prefijo `Ctrl+a`)
 - Barra arriba con las pestañas como botones, CPU y RAM, botones de **menú** y **guía**, y la hora. Se adapta al ancho de la ventana.
-- Todo se puede hacer con el ratón: clic en pestañas, clic derecho en paneles, pestañas y sesiones para abrir su menú, rueda para desplazarte.
+- Todo se puede hacer **con el ratón o con el teclado**, y las dos cosas a la vez: clic en pestañas, clic derecho en paneles, pestañas y sesiones para abrir su menú, rueda para desplazarte; y cada clic tiene su tecla.
 - `Ctrl+a ?`: **guía** de todos los atajos, con buscador. `Ctrl+a Space`: **menú rápido**.
 - **Selector de sesiones** con vista previa (`Ctrl+a s`), descripciones de sesión y árbol de sesiones.
 - Las sesiones **sobreviven a un reinicio**: se guardan solas cada 5 minutos ([tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) + [continuum](https://github.com/tmux-plugins/tmux-continuum)).
-- Antes de cerrar algo que no se puede recuperar (una sesión, una pestaña, un panel con un programa en marcha, el historial), **pregunta**.
+- Antes de cerrar algo que no se puede recuperar (una sesión, una pestaña, un panel con un programa en marcha, el historial), **pregunta** con un pequeño menú: clic en la respuesta, o `y` / `n` (`Esc` cancela).
 
 **El monitor del sistema** (sesión `system`, se abre sola en cada terminal nueva)
 
@@ -59,7 +59,7 @@ Funciona en **Ubuntu 26.04**, **Ubuntu 24.04**, **WSL** (Ubuntu dentro de Window
 | 3 · packages | tus paquetes (apt, snap, brew) con notas, actualizaciones, buscador e información de cada uno |
 | 4 · docker | contenedores, detalle (Dockerfile, compose, configuración final), logs en vivo con buscador |
 
-Cada panel tiene su botón de **zoom**, su menú con clic derecho y se adapta a cualquier tamaño de ventana.
+Cada panel tiene su botón de **zoom**, su menú (clic derecho o `Enter`) y se adapta a cualquier tamaño de ventana. En las listas: escribe para filtrar (`Esc` o clic en **✕** lo borra), `↑↓` para moverte, `← →` o clic en un título para ordenar (`Ctrl+r` invierte), `Tab` para cambiar de fuente (all · apt · snap · brew). En los paneles de detalle y logs, `Tab` o `← →` cambian de pestaña.
 
 ---
 
@@ -164,6 +164,21 @@ Se puede ejecutar **todas las veces que quieras**: solo hace lo que falta. Si ya
 | `./install.sh --config-only` | solo la configuración: ni paquetes, ni fuente, ni plugins (ni `update`) |
 | `./install.sh --no-update` | ya instalado: solo lo que falte, sin `update` |
 | `bash install/doctor.sh` | comprobar la instalación en cualquier momento |
+| `terminal files` | qué archivos ha puesto en tu máquina y para qué sirve cada uno |
+
+Lo mismo con **`make`** (si no lo tienes: `sudo apt install make`; `./install.sh` funciona igual sin él). `make` a secas enseña la lista; `YES=1` quita las preguntas (`make install YES=1`):
+
+| `make …` | Qué hace |
+|---|---|
+| `install` · `update` | instala lo que falte y, si ya está instalado, actualiza (`./install.sh`) |
+| `install-no-update` | solo lo que falte, sin `update` |
+| `config` | solo la configuración |
+| `dry-run` | enseña lo que haría, sin cambiar nada |
+| `uninstall` | quita las líneas de terminal-setup (`./uninstall.sh`) |
+| `doctor` | comprobar la instalación |
+| `files` | todos los archivos que ha puesto la instalación y para qué sirve cada uno (también: `terminal files`) |
+| `monitor` | reconstruir el monitor del sistema |
+| `check` | sintaxis de todos los scripts (para cambios en el repo) |
 
 **Qué se instala**
 
@@ -254,6 +269,7 @@ Los paquetes, la fuente y los plugins **se quedan instalados**, porque otras cos
 ```
 terminal-setup/
 ├── install.sh / uninstall.sh       instalar / deshacer
+├── Makefile                        los mismos comandos con make (make a secas: la lista)
 ├── install/
 │   ├── lib.sh                      funciones comunes (detectar el sistema, preguntar, versiones)
 │   ├── versions.sh                 versiones mínimas y las que se descargan
@@ -263,7 +279,8 @@ terminal-setup/
 │   ├── fonts.sh                    JetBrainsMono Nerd Font
 │   ├── config.sh                   las líneas en ~/.zshrc y ~/.tmux.conf
 │   ├── plugins.sh · plugins.lock   plugins en sus versiones probadas
-│   └── doctor.sh                   comprobación
+│   ├── doctor.sh                   comprobación
+│   └── files.sh                    qué archivos ha puesto y para qué (terminal files)
 ├── zsh/
 │   ├── zshrc                       lo carga tu ~/.zshrc
 │   ├── aliases.zsh                 alias (los carga zshrc)

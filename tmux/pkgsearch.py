@@ -33,6 +33,7 @@ class Search(SourcesPane, TableApp):
     title = "Search"
     noun = "found"
     interval = 0.4
+    reload_every = float("inf")                 # it searches when the words change, not on a timer
     remote_query = True
     sort_key = "rank"
     columns = [Column("name", "PACKAGE", 24, min=12),
@@ -80,14 +81,17 @@ class Search(SourcesPane, TableApp):
             if self.changed() or self.pending:
                 self.pending = False
                 self.reload()
+            super().dispatch(ev)                    # zoom state, messages fade (no reload: see above)
             return
         if not (self.menu or self.ask or self.prompt):
             if kind == "char":
                 self.query += ev[1]
-                self.pending, self.msg = True, ""
+                self.query_changed()
+                self.pending = True
                 return
             if kind == "key" and ev[1] in ("backspace", "ctrl-u", "esc"):
                 self.query = "" if ev[1] != "backspace" else self.query[:-1]
+                self.query_changed()
                 self.pending = True
                 return
         super().dispatch(ev)

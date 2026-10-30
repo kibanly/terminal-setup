@@ -103,8 +103,10 @@ ensure_now() {
 }
 
 restart_now() {
+  local was; was=$(tmux display -p -t "$S:" '#W' 2>/dev/null)
   tmux rename-session -t "=$S" "$S-old" 2>/dev/null
   build
+  [[ -n $was ]] && tmux select-window -t "$S:$was" 2>/dev/null
   tmux list-clients -t "$S-old" -F '#{client_name}' 2>/dev/null | while read -r c; do tmux switch-client -c "$c" -t "=$S"; done
   tmux kill-session -t "=$S-old" 2>/dev/null
 }

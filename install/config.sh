@@ -85,7 +85,6 @@ links_into_repo() {
 # plugins, logs and session descriptions, the rest goes (or becomes a copy)
 unlink_old() {
   local f item
-  MIGRATED=1
   for f in $(links_into_repo); do
     if [ "$DRY_RUN" = 1 ]; then info "[dry-run] ~/$f: link into the repo → plain file / folder"; continue; fi
     case $f in

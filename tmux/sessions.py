@@ -5,8 +5,9 @@
 #
 #  Mouse: hover highlights and previews · click opens · right-click: menu with
 #         open / rename / close (close asks first) / session tree · wheel scrolls
-#  Keys:  type to filter · ↑↓ move · Enter open · Ctrl+n new · Ctrl+r rename
-#         · Ctrl+x close (asks first) · Ctrl+t session tree · Esc clears / closes
+#  Keys:  type to filter · ↑↓ PgUp PgDn Home End move · Enter open · Ctrl+n new
+#         · Ctrl+r rename · Ctrl+e describe · Ctrl+x close (asks first) · Ctrl+t session tree
+#         · Esc clears / closes · in a question: y / n, or click its buttons
 #  Exit status: 0 when a session was opened, 1 when closed without choosing.
 # ═══════════════════════════════════════════════════════════════
 
@@ -234,7 +235,8 @@ class Picker:
         if self.msg:
             return " " + self.msg
         # the longest hint that fits (a cut one would end mid-word)
-        for hint in ("enter open · right-click for more · ctrl-n new · ctrl-r rename · ctrl-x close · ctrl-t tree",
+        for hint in ("enter open · right-click for more · ctrl-n new · ctrl-r rename · ctrl-e describe · ctrl-x close · ctrl-t tree",
+                     "enter open · right-click for more · ctrl-n new · ctrl-r rename · ctrl-x close · ctrl-t tree",
                      "enter open · right-click for more · ctrl-n new · ctrl-x close",
                      "enter open · right-click for more",
                      "right-click for more"):
@@ -463,6 +465,8 @@ class Picker:
             self.start_new()
         elif name == "ctrl-r":
             self.ask_rename(self.cur)
+        elif name == "ctrl-e":
+            self.ask_describe(self.cur)
         elif name == "ctrl-x":
             self.ask_kill(self.cur)
         elif name == "ctrl-t":

@@ -115,10 +115,9 @@ class Ports(TableApp):
                          "where": where(addr), "pid": pid, "name": name, "container": container})
         return rows
 
-    def apply(self):
-        super().apply()
+    def order(self, rows):
         # your own programs and containers first; system ports you cannot touch go to the bottom
-        self.rows.sort(key=lambda r: r["pid"] is None and not r["container"])
+        return sorted(rows, key=lambda r: r["pid"] is None and not r["container"])
 
     def row_colour(self, r):
         if r["container"]:
@@ -216,6 +215,7 @@ class Ports(TableApp):
             if q:
                 tmux("set", "-gu", "@ports-query")
                 self.query = q[4:] if q.startswith("pid=") else q
+                self.query_changed()
         super().dispatch(ev)
 
 

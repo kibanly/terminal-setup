@@ -194,6 +194,12 @@ class Menu:
             return ("pick", self.items[i][2]) if i is not None else None
         return None
 
+    def select_first(self):
+        """Opened from the keyboard: start on the first item, so Enter works at once."""
+        self.cur = next((i for i, it in enumerate(self.items) if it[2]), None)
+        self.show(self.cur)
+        return self
+
     def on_key(self, kind, value):
         if kind == "key" and value in ("esc", "ctrl-c"):
             return ("close",)
@@ -205,9 +211,17 @@ class Menu:
                 k = enabled.index(self.cur) + (1 if value == "down" else -1)
                 self.cur = enabled[k % len(enabled)]
             self.show(self.cur)
-        elif kind == "key" and value in ("pgup", "pgdn", "home", "end"):
-            self.scroll({"pgup": -self.rows, "pgdn": self.rows, "home": -len(self.items),
-                         "end": len(self.items)}[value])
+        elif kind == "key" and value in ("pgup", "pgdn", "home", "end") and enabled:
+            # the highlight moves too, so Enter picks what is on screen
+            if value in ("home", "end"):
+                self.cur = enabled[0 if value == "home" else -1]
+            else:
+                at = self.cur if self.cur in enabled else enabled[0]
+                want = at + (self.rows if value == "pgdn" else -self.rows)
+                after = [i for i in enabled if i <= want] if value == "pgup" else [i for i in enabled if i >= want]
+                self.cur = (after[-1] if value == "pgup" else after[0]) if after else \
+                           enabled[0 if value == "pgup" else -1]
+            self.show(self.cur)
         elif kind == "key" and value == "enter" and self.cur is not None:
             return ("pick", self.items[self.cur][2])
         elif kind == "char":
@@ -285,9 +299,9 @@ MOUSE = re.compile(rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 SEQS = {b"\x1b[A": "up", b"\x1bOA": "up", b"\x1b[B": "down", b"\x1bOB": "down",
         b"\x1b[C": "right", b"\x1bOC": "right", b"\x1b[D": "left", b"\x1bOD": "left",
         b"\x1b[5~": "pgup", b"\x1b[6~": "pgdn", b"\x1b[H": "home", b"\x1b[1~": "home",
-        b"\x1b[F": "end", b"\x1b[4~": "end", b"\x1b[3~": "delete"}
+        b"\x1b[F": "end", b"\x1b[4~": "end", b"\x1b[3~": "delete", b"\x1b[Z": "btab"}
 CTRL = {b"\r": "enter", b"\n": "enter", b"\x7f": "backspace", b"\x08": "backspace", b"\t": "tab",
-        b"\x1b": "esc", b"\x15": "ctrl-u", b"\x03": "ctrl-c", b"\x04": "ctrl-d",
+        b"\x1b": "esc", b"\x15": "ctrl-u", b"\x03": "ctrl-c", b"\x04": "ctrl-d", b"\x05": "ctrl-e",
         b"\x0e": "ctrl-n", b"\x12": "ctrl-r", b"\x18": "ctrl-x", b"\x14": "ctrl-t"}
 
 

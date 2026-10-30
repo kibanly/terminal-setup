@@ -69,7 +69,8 @@ click here|Swap with the previous pane|swap-pane -U
 [q]  or  [Esc]|Leave · Esc first clears a selection|
 @Inside popups|session picker, extract, links, this guide
 [Enter]|Open · insert · open the link|
-[Ctrl+n] · [Ctrl+r] · [Ctrl+x] · [Ctrl+t]|Session picker · new · rename · close (asks first) · tree|
+[Ctrl+n] · [Ctrl+r] · [Ctrl+e] · [Ctrl+x] · [Ctrl+t]|Session picker · new · rename · describe · close (asks first) · tree|
+[y] / [n]  or  [Esc]|A question (close, kill, clear…) · or click its answer|
 [Ctrl+y]|Extract and links · copy instead|
 [Ctrl+f] · [Ctrl+g]|Extract · word / path / url / line · this pane or the whole tab|
 [Tab]|Links · mark several · Guide · next tab of the guide|
@@ -94,10 +95,16 @@ type in Search|Find any apt, snap or brew package · right-click to install it (
 [Right-click] a process|Stop · force kill (both ask first) · show its ports · copy PID or command|
 [Right-click] a port|Open in the browser · copy · stop its program (asks first) · show the process or container|
 [Del]|Stop the highlighted process or port program · asks first|
+[↑] [↓] [PgUp] [PgDn] [Home] [End]|Move in a list · the panes next to it follow the highlighted row|
+[Enter] on a row|Its menu (the same as right-click) · ↑↓ and Enter, or the letter in ( ) · Esc closes|
+[←] / [→] in a list|Sort by the previous / next column · [Ctrl+r] reverses the order|
 click a column title|Sort by it · click again to reverse|
-[Double-click] a row|Its menu (the same as right-click)|
+[Tab] / [Shift+Tab] in a package list|Next / previous source · all · apt · snap · brew (or click them)|
+[Double-click] a row|Its main action: open the port in the browser · elsewhere its menu|
 [Wheel] on a long menu|Scroll it · ▲ ▼ on its border show there is more|
-type|Filter the list · Esc clears it|
+type|Filter the list · Esc or a click on ✕ clears it|
+[Tab] / [←] [→] in details, Logs, Package|Next / previous tab (or click it)|
+[Enter] in details, Logs, Package|Its menu · copy, select text, save, time range, zoom|
 [Ctrl+a] [X] in system|Restart the monitor (it is always there) · a pane or tab you close comes back by itself|
 [Click] 󰊓 zoom on a pane title|Zoom that pane · 󰊔 restore (or double-click the title)|
 [Double-click] btop, fastfetch, Resources|Zoom it · again to restore|
@@ -143,6 +150,7 @@ type|Filter the list · Esc clears it|
 [Right-click] a session|Open, rename, describe, new, session tree, close · close asks first (system: restart)|
 [Wheel]|Scrolls the list|
 [Click] outside|Closes the menu|
+[Click] an answer|Questions (close a tab, kill a program, clear the history…) · or press y / n · Esc cancels|
 @@Terminal|commands for any shell, also outside tmux
 @Sessions|the terminal command
 terminal|Session picker|@picker
@@ -154,8 +162,9 @@ terminal rename old new|Rename a session|
 terminal kill name|Close a session · asks first (system: restarts it)|
 terminal kill-all|Close every session but the system monitor · asks first, and saves so they stay closed|
 terminal guide|This guide|
+terminal files|Every file the install put on this machine, and what it is for|@shell:bash $TERMINAL_SETUP/install/files.sh | less -R
 terminal help|Every command|@shell:$TERMINAL_SETUP/tmux/terminal.zsh help; read -sk "?press any key"
-@Settings|in ~/.zshenv
+@Settings|in your ~/.zshrc, above the terminal-setup line
 export TERMINAL_NO_AUTOSTART=1|Do not open tmux in new tabs|
 EOF
 )
