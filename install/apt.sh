@@ -68,6 +68,9 @@ apt_show_plan() {
 apt_install() {
   export DEBIAN_FRONTEND=noninteractive
   step "Ubuntu packages"
+  case "$APT_MISSING$NEED_TMUX_BUILD$NEED_FZF$NEED_FASTFETCH$NEED_STARSHIP" in
+    0000) ok "nothing to install: every package is there" ;;
+  esac
   if [ -n "$APT_MISSING" ]; then
     info "installing $(printf '%s\n' $APT_MISSING | wc -l | tr -d ' ') packages (a few minutes)…"
     # shellcheck disable=SC2086
